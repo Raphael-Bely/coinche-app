@@ -99,29 +99,37 @@ class GameRoom {
 
   setTeams(teams) {
     if (this.state !== STATE.WAITING) return { error: 'Impossible maintenant' };
-    if (!teams[0] || !teams[1] || teams[0].length !== 2 || teams[1].length !== 2)
+    if (!Array.isArray(teams[0]) || !Array.isArray(teams[1]))
       return { error: 'Équipes invalides' };
 
-    // Remap seats so team members always sit opposite each other (Coinche diagonal rule).
-    // New seat order: [t0[0], t1[0], t0[1], t1[1]] → seats 0&2 = team 0, seats 1&3 = team 1
-    const [a, b] = teams[0];
-    const [c, d] = teams[1];
-    const newOrder = [a, c, b, d]; // new seat positions (old indices)
-    const oldPlayers = [...this.players];
-    this.players = newOrder.map((oldIdx, newIdx) => ({
-      ...oldPlayers[oldIdx],
-      idx: newIdx,
-    }));
-    this.teams   = [[0, 2], [1, 3]];
-    this.botIdxs = new Set(this.players.filter(p => p.isBot).map(p => p.idx));
+    const allIdxs = [...teams[0], ...teams[1]];
+    const maxIdx  = this.players.length - 1;
+    if (allIdxs.some(i => typeof i !== 'number' || i < 0 || i > maxIdx))
+      return { error: 'Équipes invalides' };
+    if (new Set(allIdxs).size !== allIdxs.length)
+      return { error: 'Équipes invalides (doublons)' };
 
-    // Return mapping so index.js can notify clients of their new idx
-    const remapped = {};
-    newOrder.forEach((oldIdx, newIdx) => {
-      const sid = oldPlayers[oldIdx].socketId;
-      if (sid) remapped[sid] = newIdx;
-    });
-    return { remapped };
+    // With exactly 2+2 players: remap seats so partners sit diagonal (seats 0&2 vs 1&3)
+    if (teams[0].length === 2 && teams[1].length === 2) {
+      const [a, b] = teams[0];
+      const [c, d] = teams[1];
+      const newOrder   = [a, c, b, d];
+      const oldPlayers = [...this.players];
+      this.players = newOrder.map((oldIdx, newIdx) => ({ ...oldPlayers[oldIdx], idx: newIdx }));
+      this.teams   = [[0, 2], [1, 3]];
+      this.botIdxs = new Set(this.players.filter(p => p.isBot).map(p => p.idx));
+
+      const remapped = {};
+      newOrder.forEach((oldIdx, newIdx) => {
+        const sid = oldPlayers[oldIdx].socketId;
+        if (sid) remapped[sid] = newIdx;
+      });
+      return { remapped };
+    }
+
+    // Partial teams (< 4 players): store as-is without remap
+    this.teams = [teams[0].slice(), teams[1].slice()];
+    return { remapped: {} };
   }
 
   // ── Game start ───────────────────────────────────────────────────────
