@@ -86,8 +86,7 @@ export default function Lobby() {
                   className={`skin-opt skin-opt-${s.id} ${skin === s.id ? 'active' : ''}`}
                   onClick={() => setSkin(s.id)}>
                   <div className="sp-card">
-                    <span className="sp-rank">A</span>
-                    <span className="sp-suit">♥</span>
+                    <img src="/cards/KH.png" className="sp-preview-img" draggable={false} alt={s.label} />
                   </div>
                   <span className="skin-opt-lbl">{s.label}</span>
                 </button>

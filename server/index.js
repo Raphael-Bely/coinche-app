@@ -97,7 +97,7 @@ function scheduleBotActions(room) {
         setTimeout(() => {
           if (room.state !== 'announce' || room.declaredAnn[snap] !== null) return;
           const ids = (room.detectedAnn[snap] || []).map(a => a.id);
-          room.submitAnnounces(`bot:${snap}`, ids);
+          room.submitAnnounces(bsid(room, snap), ids);
           broadcastAndBotAct(room);
         }, 600 + Math.random() * 600);
         break;
@@ -124,8 +124,10 @@ function scheduleBotActions(room) {
   }
 }
 
+function bsid(room, pi) { return room.players[pi]?.socketId ?? `bot:${pi}`; }
+
 function botDoBid(room, pi) {
-  if (room.coinched) return room.passBid(`bot:${pi}`);
+  if (room.coinched) return room.passBid(bsid(room, pi));
   const lv = botLevel(room, pi);
   if (lv === 'classique') return botDoBidClassique(room, pi);
   if (lv === 'normal')    return botDoBidNormal(room, pi);
@@ -133,6 +135,7 @@ function botDoBid(room, pi) {
 }
 
 function botDoBidClassique(room, pi) {
+  const sid = bsid(room, pi);
   const partner    = room.partnerOf(pi);
   const partnerBid = partner >= 0
     ? (room.bids.filter(b => b.playerIdx === partner && b.type === 'bid').at(-1) ?? null)
@@ -140,37 +143,40 @@ function botDoBidClassique(room, pi) {
   const mustBid = !room.currentBid && room.passCount >= 3;
   const bid = chooseBidClassique(room.hands[pi], room.currentBid, partnerBid);
   if (!bid && mustBid) return botDoBidRandom(room, pi);
-  if (!bid) return room.passBid(`bot:${pi}`);
-  return room.placeBid(`bot:${pi}`, bid.value, bid.suit);
+  if (!bid) return room.passBid(sid);
+  return room.placeBid(sid, bid.value, bid.suit);
 }
 
 function botDoBidRandom(room, pi) {
+  const sid    = bsid(room, pi);
   const cur    = room.currentBid;
   const curNum = cur ? (cur.value === 'Capot' ? 999 : Number(cur.value)) : 70;
   const noBid  = !cur;
   const passes = room.bids.filter(b => b.type === 'pass').length;
 
   if (!(noBid && passes >= 3) && Math.random() < 0.55) {
-    return room.passBid(`bot:${pi}`);
+    return room.passBid(sid);
   }
   const valid = BOT_STEPS.filter(v => (v === 'Capot' ? 999 : Number(v)) > curNum);
-  if (!valid.length) return room.passBid(`bot:${pi}`);
+  if (!valid.length) return room.passBid(sid);
 
   const value = valid[Math.floor(Math.random() * Math.ceil(valid.length / 2))];
   const suit  = BOT_SUITS[Math.floor(Math.random() * BOT_SUITS.length)];
-  return room.placeBid(`bot:${pi}`, value, suit);
+  return room.placeBid(sid, value, suit);
 }
 
 function botDoBidNormal(room, pi) {
+  const sid = bsid(room, pi);
   const mustBid = !room.currentBid && room.passCount >= 3;
   const bid = chooseBid(room.hands[pi], room.currentBid);
-  if (!bid && mustBid) return botDoBidRandom(room, pi); // avoid infinite redeal
-  if (!bid) return room.passBid(`bot:${pi}`);
-  return room.placeBid(`bot:${pi}`, bid.value, bid.suit);
+  if (!bid && mustBid) return botDoBidRandom(room, pi);
+  if (!bid) return room.passBid(sid);
+  return room.placeBid(sid, bid.value, bid.suit);
 }
 
 function botDoPlay(room, pi) {
-  if (botLevel(room, pi) === 'normal') return normalPlay(room, pi);
+  const lv = botLevel(room, pi);
+  if (lv === 'classique' || lv === 'normal') return normalPlay(room, pi);
   return botDoPlayRandom(room, pi);
 }
 
@@ -181,7 +187,7 @@ function botDoPlayRandom(room, pi) {
   const playable = getPlayableCards(room.hands[pi], room.currentTrick, trump, pi, partner);
   if (!playable.length) return {};
   const card = playable[Math.floor(Math.random() * playable.length)];
-  return room.playCard(`bot:${pi}`, card.id);
+  return room.playCard(bsid(room, pi), card.id);
 }
 
 io.on('connection', socket => {

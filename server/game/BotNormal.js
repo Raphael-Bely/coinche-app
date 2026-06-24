@@ -102,60 +102,115 @@ function chooseBid(hand, currentBid) {
 
 // ─── Playing ──────────────────────────────────────────────────────────────────
 
-function bestLead(playable, trump) {
-  // If holding trump J or 9, lead trump to pull opponent's trumps
-  if (trump !== 'SA' && trump !== 'TA') {
-    const trumps = playable.filter(c => c.suit === trump);
-    if (trumps.some(c => c.rank === 'J' || c.rank === '9')) {
-      return strongest(trumps, trump);
+// True if opponents still hold at least one trump card (bot can see all hands)
+function opponentsHaveTrump(room, pi, trump) {
+  if (!trump || trump === 'SA' || trump === 'TA') return false;
+  const partner = room.partnerOf(pi);
+  return [0,1,2,3].filter(i => i !== pi && i !== partner)
+    .some(i => room.hands[i].some(c => c.suit === trump));
+}
+
+// True if this card is the highest remaining card in its suit
+function isHighestRemaining(room, card, trump) {
+  const all = room.hands.flat().concat(room.currentTrick.map(t => t.card));
+  return all.filter(c => c.suit === card.suit)
+    .every(c => strength(c, trump) <= strength(card, trump));
+}
+
+// Suit that partner last led (signal of preference)
+function partnerPreferredSuit(room, pi, trump) {
+  const partner = room.partnerOf(pi);
+  for (const trick of [...room.tricks].reverse()) {
+    const lead = trick.cards[0];
+    if (lead.playerIdx === partner && lead.card.suit !== trump) return lead.card.suit;
+  }
+  return null;
+}
+
+function bestLead(room, pi, playable, trump) {
+  // ── Trump pulling: lead J then 9 while opponents still have trumps ──
+  if (trump && trump !== 'SA' && trump !== 'TA') {
+    const myTrumps = playable.filter(c => c.suit === trump);
+    if (myTrumps.length && opponentsHaveTrump(room, pi, trump)) {
+      const J = myTrumps.find(c => c.rank === 'J');
+      if (J) return J;
+      const nine = myTrumps.find(c => c.rank === '9');
+      if (nine) return nine;
+      // Continue pulling with strongest remaining trump if we're master
+      if (isHighestRemaining(room, strongest(myTrumps, trump), trump))
+        return strongest(myTrumps, trump);
     }
   }
-  // Lead an ace (safe trick)
-  const aces = playable.filter(c => c.rank === 'A');
+
+  // ── Winning cards: guaranteed-win leads ──
+  const winners = playable.filter(c =>
+    (!isTrump(c, trump) || trump === 'TA') && isHighestRemaining(room, c, trump));
+  if (winners.length) {
+    // Prefer non-trump winners; prefer aces
+    const aces = winners.filter(c => c.rank === 'A');
+    if (aces.length) return aces[0];
+    return winners[0];
+  }
+
+  // ── Aces (probably winning even if not verified) ──
+  const aces = playable.filter(c => c.rank === 'A' && !isTrump(c, trump));
   if (aces.length) return aces[0];
 
-  // Lead highest card in the longest suit
-  const bySuit = {};
-  for (const c of playable) {
-    if (!bySuit[c.suit]) bySuit[c.suit] = [];
-    bySuit[c.suit].push(c);
+  // ── Lead partner's preferred suit ──
+  const prefSuit = partnerPreferredSuit(room, pi, trump);
+  if (prefSuit) {
+    const pref = playable.filter(c => c.suit === prefSuit);
+    if (pref.length) return strongest(pref, trump);
   }
-  const longest = Object.values(bySuit).reduce((a, b) => a.length >= b.length ? a : b);
-  return strongest(longest, trump);
+
+  // ── Short suit (singleton/doubleton) to set up future ruff ──
+  const nonTrump = playable.filter(c => !isTrump(c, trump));
+  if (nonTrump.length) {
+    const bySuit = {};
+    for (const c of nonTrump) { (bySuit[c.suit] = bySuit[c.suit] || []).push(c); }
+    const short = Object.values(bySuit).reduce((a, b) => a.length <= b.length ? a : b);
+    if (short.length <= 2) return short[0];
+  }
+
+  return strongest(playable, trump);
 }
 
 function normalPlay(room, pi) {
   const trump    = room.currentBid?.suit;
   const partner  = room.partnerOf(pi);
+  const sid      = room.players[pi]?.socketId;
   const playable = getPlayableCards(room.hands[pi], room.currentTrick, trump, pi, partner);
   if (!playable.length) return {};
-  if (playable.length === 1) return room.playCard(`bot:${pi}`, playable[0].id);
+  if (playable.length === 1) return room.playCard(sid, playable[0].id);
 
   const trick = room.currentTrick;
 
   // Leading
   if (!trick.length) {
-    return room.playCard(`bot:${pi}`, bestLead(playable, trump).id);
+    return room.playCard(sid, bestLead(room, pi, playable, trump).id);
   }
 
   // Following: is partner currently winning?
-  const winnerIdx    = trickWinner(trick, trump);
-  const partnerWins  = winnerIdx === partner;
+  const winnerIdx   = trickWinner(trick, trump);
+  const partnerWins = winnerIdx === partner;
+  const isLast      = trick.length === 3;
 
   if (partnerWins) {
-    // Don't waste — dump cheapest card
-    return room.playCard(`bot:${pi}`, cheapest(playable, trump).id);
+    // Partner winning — contribute cheapest non-trump; avoid wasting high cards
+    const nonTrump = playable.filter(c => !isTrump(c, trump));
+    const dump = nonTrump.length ? cheapest(nonTrump, trump) : cheapest(playable, trump);
+    return room.playCard(sid, dump.id);
   }
 
-  // Opponent winning — try to beat with cheapest winning card
+  // Opponent winning — try to beat
   const winCard = trick.find(t => t.playerIdx === winnerIdx).card;
-  const winner  = cheapestWinner(playable, winCard, trump);
-  if (winner) {
-    return room.playCard(`bot:${pi}`, winner.id);
-  }
+  const over = cheapestWinner(playable, winCard, trump);
 
-  // Can't win — dump cheapest
-  return room.playCard(`bot:${pi}`, cheapest(playable, trump).id);
+  // Finesse if playing last: just need the cheapest winner
+  if (over) return room.playCard(sid, over.id);
+
+  // Can't beat — dump cheapest (avoid giving opponents valuable points)
+  return room.playCard(sid, cheapest(playable, trump).id);
 }
 
 // ─── Classic bidding heuristic ───────────────────────────────────────────────

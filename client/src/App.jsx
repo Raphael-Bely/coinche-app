@@ -10,7 +10,12 @@ export default function App() {
   const [gs,      setGs]      = useState(null);   // full game state
   const [toasts,  setToasts]  = useState([]);
   const [error,   setError]   = useState('');
-  const [skin,    setSkinRaw] = useState(() => localStorage.getItem('coincheSkin') || 'classic');
+  const [skin,    setSkinRaw] = useState(() => {
+    const saved = localStorage.getItem('coincheSkin');
+    // Migrate old skin ids removed in this version
+    if (saved === 'night' || saved === 'minimal') return 'nuit';
+    return saved || 'classic';
+  });
 
   function setSkin(id) {
     setSkinRaw(id);

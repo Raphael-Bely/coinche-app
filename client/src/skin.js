@@ -1,11 +1,11 @@
 import { createContext, useContext } from 'react';
 
+// All skins use real card images — face cards always visible
 export const SKINS = [
-  { id: 'classic',  label: 'Classique',   cssOnly: false },
-  { id: 'vintage',  label: 'Vintage',     cssOnly: false },
-  { id: 'night',    label: 'Nuit',        cssOnly: false },
-  { id: 'neon',     label: 'Néon',        cssOnly: true  },
-  { id: 'minimal',  label: 'Minimaliste', cssOnly: true  },
+  { id: 'classic', label: 'Classique' },
+  { id: 'vintage', label: 'Vintage'   },
+  { id: 'nuit',    label: 'Nuit'      },
+  { id: 'neon',    label: 'Néon'      },
 ];
 
 export const SkinContext = createContext(['classic', () => {}]);
