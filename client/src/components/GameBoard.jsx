@@ -34,7 +34,7 @@ function sortHand(hand, trump) {
   });
 }
 
-export default function GameBoard({ gs, myInfo }) {
+export default function GameBoard({ gs, myInfo, onLeave }) {
   const pi     = myInfo.playerIdx;
   const myTeam = gs.teams[0].includes(pi) ? 0 : 1;
 
@@ -80,6 +80,7 @@ export default function GameBoard({ gs, myInfo }) {
 
       {/* ── Top bar ─────────────────────────────────────────────────── */}
       <div className="room-bar">
+        <button className="btn-leave" onClick={onLeave} title="Quitter la partie">✕ Quitter</button>
         <span className="room-code">🃏 {gs.code}</span>
         {isGameActive && (
           <div className="nous-eux-panel">

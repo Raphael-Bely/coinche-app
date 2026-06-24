@@ -16,6 +16,14 @@ export default function App() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4500);
   }, []);
 
+  const leaveGame = useCallback(() => {
+    socket.disconnect();
+    setScreen('lobby');
+    setMyInfo(null);
+    setGs(null);
+    setTimeout(() => socket.connect(), 100);
+  }, []);
+
   useEffect(() => {
     socket.connect();
     socket.on('joined',  ({ code, playerIdx }) => { setMyInfo({ code, playerIdx }); setScreen('game'); });
@@ -32,7 +40,7 @@ export default function App() {
         {toasts.map(t => <div key={t.id} className="notify-toast">{t.msg}</div>)}
       </div>
       {screen === 'lobby' && <Lobby />}
-      {screen === 'game'  && gs && myInfo && <GameBoard gs={gs} myInfo={myInfo} />}
+      {screen === 'game'  && gs && myInfo && <GameBoard gs={gs} myInfo={myInfo} onLeave={leaveGame} />}
     </div>
   );
 }

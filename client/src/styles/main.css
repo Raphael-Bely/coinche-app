@@ -212,6 +212,18 @@ input  { font: inherit; }
 
 .room-code { font-weight: 700; font-size: 13px; letter-spacing: 1px; color: var(--accent); white-space: nowrap; }
 
+.btn-leave {
+  background: transparent;
+  color: rgba(255,255,255,.45);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,.12);
+  transition: all .15s;
+}
+.btn-leave:hover { background: rgba(183,28,28,.35); color: #ff8a80; border-color: #b71c1c; }
+
 /* NOUS / EUX score panel — top right */
 .nous-eux-panel {
   margin-left: auto;
