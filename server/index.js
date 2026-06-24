@@ -17,6 +17,28 @@ const io   = new Server(http, { cors: { origin: '*' } });
 
 const rooms      = new Map(); // code → GameRoom
 const playerRoom = new Map(); // socketId → code
+const voiceRooms = new Map(); // code → Map<socketId, { socketId, playerIdx, name }>
+
+function getVoiceRoom(code) {
+  if (!voiceRooms.has(code)) voiceRooms.set(code, new Map());
+  return voiceRooms.get(code);
+}
+function broadcastVoiceUsers(code) {
+  const vr = voiceRooms.get(code);
+  if (!vr) return;
+  const users = [...vr.values()].map(({ playerIdx, name }) => ({ playerIdx, name }));
+  io.to(code).emit('voice_users', users);
+}
+function leaveVoiceRoom(socketId) {
+  const code = playerRoom.get(socketId);
+  if (!code) return;
+  const vr = voiceRooms.get(code);
+  if (!vr || !vr.has(socketId)) return;
+  vr.delete(socketId);
+  for (const { socketId: sid } of vr.values())
+    io.to(sid).emit('voice_peer_left', { socketId });
+  broadcastVoiceUsers(code);
+}
 
 function genCode() {
   let c;
@@ -278,8 +300,32 @@ io.on('connection', socket => {
     broadcastAndBotAct(room);
   });
 
+  // ── Voice chat ───────────────────────────────────────────────────────
+  socket.on('voice_join', () => {
+    const code = playerRoom.get(socket.id);
+    const room = rooms.get(code);
+    if (!room) return;
+    const pi     = room._pidx(socket.id);
+    const player = room.players[pi];
+    if (!player) return;
+    const vr       = getVoiceRoom(code);
+    const existing = [...vr.values()];
+    socket.emit('voice_peers', existing);
+    for (const { socketId } of existing)
+      io.to(socketId).emit('voice_peer_joined', { socketId: socket.id, playerIdx: pi, name: player.name });
+    vr.set(socket.id, { socketId: socket.id, playerIdx: pi, name: player.name });
+    broadcastVoiceUsers(code);
+  });
+
+  socket.on('voice_leave', () => leaveVoiceRoom(socket.id));
+
+  socket.on('voice_signal', ({ to, signal }) => {
+    io.to(to).emit('voice_signal', { from: socket.id, signal });
+  });
+
   // ── Disconnect ───────────────────────────────────────────────────────
   socket.on('disconnect', () => {
+    leaveVoiceRoom(socket.id);
     const code = playerRoom.get(socket.id);
     if (!code) return;
     const room = rooms.get(code);
