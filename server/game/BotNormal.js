@@ -158,4 +158,89 @@ function normalPlay(room, pi) {
   return room.playCard(`bot:${pi}`, cheapest(playable, trump).id);
 }
 
-module.exports = { normalPlay, chooseBid };
+// ─── Classic bidding heuristic ───────────────────────────────────────────────
+// Rules per user spec: J+9 → 80, 4 trumps with J+9 → 100,
+// +10 per off-suit ace or coupe franche, partner support bonuses.
+
+const PLAIN_SUITS = ['♠', '♥', '♦', '♣'];
+
+function chooseBidClassique(hand, currentBid, partnerBid) {
+  const curNum = currentBid
+    ? (currentBid.value === 'Capot' ? 999 : Number(currentBid.value))
+    : 70;
+
+  const BID_STEPS = [80, 90, 100, 110, 120, 130, 140, 150, 160];
+
+  function clamp(val) {
+    return BID_STEPS.filter(v => v > curNum && v <= Math.min(val, 160)).at(-1) ?? null;
+  }
+
+  const candidates = [];
+
+  // Normal trump suits
+  for (const suit of PLAIN_SUITS) {
+    const trumps = hand.filter(c => c.suit === suit);
+    const hasJ   = trumps.some(c => c.rank === 'J');
+    const has9   = trumps.some(c => c.rank === '9');
+
+    if (!hasJ) continue; // J required to open a suit
+
+    // Base value: J+9 = 80, J alone = 60 (needs aces to reach 80)
+    let val = has9 ? 80 : 60;
+
+    // 3+ trumps with J+9 → push up
+    if (has9 && trumps.length >= 4) val = 100;
+    else if (has9 && trumps.length === 3) val = 90;
+
+    const offSuits = PLAIN_SUITS.filter(s => s !== suit);
+
+    // +10 per off-suit ace
+    for (const s of offSuits) {
+      if (hand.some(c => c.suit === s && c.rank === 'A')) val += 10;
+    }
+
+    // +10 per coupe franche (void or singleton in non-trump suit)
+    for (const s of offSuits) {
+      if (hand.filter(c => c.suit === s).length <= 1) val += 10;
+    }
+
+    // Partner support: +20 with J, +10 with 9, +10 per ace held
+    if (partnerBid && partnerBid.suit === suit) {
+      if (hasJ) val += 20;
+      if (has9) val += 10;
+      for (const c of hand) if (c.rank === 'A') val += 10;
+    }
+
+    const step = clamp(val);
+    if (step) candidates.push({ suit, val, value: step });
+  }
+
+  // SA: aces/tens win tricks, each A=20, 10=10, K=5
+  {
+    let val = 0;
+    for (const c of hand) {
+      if (c.rank === 'A') val += 20;
+      if (c.rank === '10') val += 10;
+      if (c.rank === 'K') val += 5;
+    }
+    if (partnerBid?.suit === 'SA') val += 20;
+    const step = clamp(val);
+    if (step) candidates.push({ suit: 'SA', val, value: step });
+  }
+
+  // TA: every J is a master (25pts each), 9s are strong (15pts each)
+  {
+    const js    = hand.filter(c => c.rank === 'J').length;
+    const nines = hand.filter(c => c.rank === '9').length;
+    let val = js * 25 + nines * 15;
+    for (const c of hand) if (c.rank === 'A') val += 5;
+    if (partnerBid?.suit === 'TA') val += 20;
+    const step = clamp(val);
+    if (step) candidates.push({ suit: 'TA', val, value: step });
+  }
+
+  if (!candidates.length) return null;
+  return candidates.reduce((best, c) => c.val > best.val ? c : best);
+}
+
+module.exports = { normalPlay, chooseBid, chooseBidClassique };

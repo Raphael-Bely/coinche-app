@@ -413,7 +413,9 @@ function WaitingArea({ gs, pi }) {
   const isHost = pi === 0;
 
   function movePlayer(pIdx, toTeam) {
-    const nt = gs.teams.map(t => t.filter(i => i !== pIdx));
+    // Filter out phantom indices (players not yet joined)
+    const real = new Set(gs.players.map(p => p.idx));
+    const nt = gs.teams.map(t => t.filter(i => real.has(i) && i !== pIdx));
     nt[toTeam] = [...nt[toTeam], pIdx];
     socket.emit('set_teams', { teams: nt });
   }
@@ -438,10 +440,10 @@ function WaitingArea({ gs, pi }) {
               return (
                 <div key={pIdx} className="team-player-row">
                   <span className="tp-name">
-                    {p.isBot ? (p.botLevel === 'normal' ? '🧠 ' : '🎲 ') : ''}
+                    {p.isBot ? (p.botLevel === 'classique' ? '⭐ ' : p.botLevel === 'normal' ? '🧠 ' : '🎲 ') : ''}
                     {p.name}
                     {pIdx === pi ? ' (toi)' : ''}
-                    {p.isBot && <span className={`bot-level-badge blb-${p.botLevel}`}>{p.botLevel === 'normal' ? 'normal' : 'aléatoire'}</span>}
+                    {p.isBot && <span className={`bot-level-badge blb-${p.botLevel}`}>{p.botLevel === 'classique' ? 'classique' : p.botLevel === 'normal' ? 'normal' : 'aléatoire'}</span>}
                   </span>
                   {isHost && (
                     <button className="btn-swap" onClick={() => movePlayer(pIdx, 1 - t)}>
@@ -457,11 +459,14 @@ function WaitingArea({ gs, pi }) {
       </div>
       {isHost && gs.players.length < 4 && (
         <div className="bot-btns">
-          <button className="btn-bot btn-bot-random" onClick={() => socket.emit('add_bot', { level: 'random' })}>
-            🎲 Bot aléatoire
+          <button className="btn-bot btn-bot-classique" onClick={() => socket.emit('add_bot', { level: 'classique' })}>
+            ⭐ Bot classique
           </button>
           <button className="btn-bot btn-bot-normal" onClick={() => socket.emit('add_bot', { level: 'normal' })}>
             🧠 Bot normal
+          </button>
+          <button className="btn-bot btn-bot-random" onClick={() => socket.emit('add_bot', { level: 'random' })}>
+            🎲 Bot aléatoire
           </button>
         </div>
       )}

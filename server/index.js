@@ -6,7 +6,7 @@ const cors        = require('cors');
 const path        = require('path');
 const fs          = require('fs');
 const { GameRoom } = require('./game/GameRoom');
-const { normalPlay, chooseBid } = require('./game/BotNormal');
+const { normalPlay, chooseBid, chooseBidClassique } = require('./game/BotNormal');
 
 const app  = express();
 app.use(cors({ origin: '*' }));
@@ -60,8 +60,9 @@ function notify(room, msg) {
 }
 
 // ── Bot logic ────────────────────────────────────────────────────────────────
-const BOT_NAMES_RANDOM = ['Bot-Renard', 'Bot-Aigle', 'Bot-Loup'];
-const BOT_NAMES_NORMAL = ['Bot-Expert', 'Bot-Malin', 'Bot-Sage'];
+const BOT_NAMES_RANDOM    = ['Bot-Renard', 'Bot-Aigle', 'Bot-Loup'];
+const BOT_NAMES_NORMAL    = ['Bot-Expert', 'Bot-Malin', 'Bot-Sage'];
+const BOT_NAMES_CLASSIQUE = ['Bot-As', 'Bot-Roi', 'Bot-Dame'];
 const BOT_SUITS  = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
 const BOT_STEPS  = [80, 90, 100, 110, 120, 130, 140, 150, 160, 'Capot'];
 
@@ -93,13 +94,12 @@ function scheduleBotActions(room) {
     for (let i = 0; i < 4; i++) {
       if (botIdxs.has(i) && declaredAnn[i] === null) {
         const snap = i;
-        // Long delay so human can read announces
         setTimeout(() => {
           if (room.state !== 'announce' || room.declaredAnn[snap] !== null) return;
           const ids = (room.detectedAnn[snap] || []).map(a => a.id);
           room.submitAnnounces(`bot:${snap}`, ids);
           broadcastAndBotAct(room);
-        }, 3000 + Math.random() * 2000);
+        }, 600 + Math.random() * 600);
         break;
       }
     }
@@ -125,11 +125,23 @@ function scheduleBotActions(room) {
 }
 
 function botDoBid(room, pi) {
-  // After coinche: contracting team can only surcoinche or accept — bots always pass
   if (room.coinched) return room.passBid(`bot:${pi}`);
-
-  if (botLevel(room, pi) === 'normal') return botDoBidNormal(room, pi);
+  const lv = botLevel(room, pi);
+  if (lv === 'classique') return botDoBidClassique(room, pi);
+  if (lv === 'normal')    return botDoBidNormal(room, pi);
   return botDoBidRandom(room, pi);
+}
+
+function botDoBidClassique(room, pi) {
+  const partner    = room.partnerOf(pi);
+  const partnerBid = partner >= 0
+    ? (room.bids.filter(b => b.playerIdx === partner && b.type === 'bid').at(-1) ?? null)
+    : null;
+  const mustBid = !room.currentBid && room.passCount >= 3;
+  const bid = chooseBidClassique(room.hands[pi], room.currentBid, partnerBid);
+  if (!bid && mustBid) return botDoBidRandom(room, pi);
+  if (!bid) return room.passBid(`bot:${pi}`);
+  return room.placeBid(`bot:${pi}`, bid.value, bid.suit);
 }
 
 function botDoBidRandom(room, pi) {
@@ -150,7 +162,9 @@ function botDoBidRandom(room, pi) {
 }
 
 function botDoBidNormal(room, pi) {
+  const mustBid = !room.currentBid && room.passCount >= 3;
   const bid = chooseBid(room.hands[pi], room.currentBid);
+  if (!bid && mustBid) return botDoBidRandom(room, pi); // avoid infinite redeal
   if (!bid) return room.passBid(`bot:${pi}`);
   return room.placeBid(`bot:${pi}`, bid.value, bid.suit);
 }
@@ -233,9 +247,9 @@ io.on('connection', socket => {
   socket.on('add_bot', ({ level } = {}) => {
     const room = rooms.get(playerRoom.get(socket.id));
     if (!room) return;
-    const lv    = level === 'normal' ? 'normal' : 'random';
+    const lv    = level === 'classique' ? 'classique' : level === 'normal' ? 'normal' : 'random';
     const idx   = room.botIdxs.size;
-    const names = lv === 'normal' ? BOT_NAMES_NORMAL : BOT_NAMES_RANDOM;
+    const names = lv === 'classique' ? BOT_NAMES_CLASSIQUE : lv === 'normal' ? BOT_NAMES_NORMAL : BOT_NAMES_RANDOM;
     const name  = names[idx % names.length];
     const r     = room.addBot(name, lv);
     if (r.error) return socket.emit('err', { msg: r.error });
