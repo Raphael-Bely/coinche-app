@@ -36,10 +36,11 @@ export default function App() {
 
   useEffect(() => {
     socket.connect();
-    socket.on('joined',  ({ code, playerIdx }) => { setMyInfo({ code, playerIdx }); setScreen('game'); });
-    socket.on('state',   (s)   => setGs(s));
-    socket.on('notify',  (msg) => toast(msg));
-    socket.on('err',     (msg) => { setError(msg); setTimeout(() => setError(''), 3000); });
+    socket.on('joined',    ({ code, playerIdx }) => { setMyInfo({ code, playerIdx }); setScreen('game'); });
+    socket.on('reindexed', ({ playerIdx }) => setMyInfo(prev => prev ? { ...prev, playerIdx } : prev));
+    socket.on('state',     (s)   => setGs(s));
+    socket.on('notify',    (msg) => toast(msg));
+    socket.on('err',       (msg) => { setError(msg); setTimeout(() => setError(''), 3000); });
     return () => socket.disconnect();
   }, [toast]);
 

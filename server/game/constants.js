@@ -7,6 +7,8 @@ const RANKS = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const PLAIN_VALUES = { '7': 0, '8': 0, '9': 0, '10': 10, 'J': 2, 'Q': 3, 'K': 4, 'A': 11 };
 const TRUMP_VALUES = { '7': 0, '8': 0, '9': 14, '10': 10, 'J': 20, 'Q': 3, 'K': 4, 'A': 11 };
 const SA_VALUES    = { '7': 0, '8': 0, '9': 0,  '10': 10, 'J': 2,  'Q': 3, 'K': 4, 'A': 19 };
+// Tout-Atout: all suits are trump but with reduced values to keep total ≈162
+const TA_VALUES    = { '7': 0, '8': 0, '9': 9,  '10': 5,  'J': 14, 'Q': 1, 'K': 3, 'A': 6  };
 
 // Trick strength (higher wins within same suit comparison)
 const PLAIN_STRENGTH = { '7': 0, '8': 1, '9': 2, 'J': 3, 'Q': 4, 'K': 5, '10': 6, 'A': 7 };
@@ -34,7 +36,7 @@ const ANNOUNCE_DEFS = {
 
 module.exports = {
   SUITS, RANKS,
-  PLAIN_VALUES, TRUMP_VALUES, SA_VALUES,
+  PLAIN_VALUES, TRUMP_VALUES, SA_VALUES, TA_VALUES,
   PLAIN_STRENGTH, TRUMP_STRENGTH,
   SEQ_ORDER, SEQ_ORDER_IDX,
   BID_STEPS, CONTRACT_SUITS,

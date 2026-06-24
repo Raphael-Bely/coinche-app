@@ -9,6 +9,15 @@ const SUIT_BUTTONS = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
 const RPOS         = ['bottom', 'right', 'top', 'left'];
 const CARDINAL     = { bottom: 'S', right: 'E', top: 'N', left: 'O' };
 
+// Always show partner at top (N), opponents at E/W — regardless of raw player indices
+function playerAtPos(pi, pos, teams) {
+  const myTeam   = teams[0].includes(pi) ? teams[0] : teams[1];
+  const partner  = myTeam.find(i => i !== pi) ?? -1;
+  const opps     = [0, 1, 2, 3].filter(i => i !== pi && i !== partner);
+  const map = { bottom: pi, top: partner, right: opps[0] ?? -1, left: opps[1] ?? -1 };
+  return map[pos] ?? -1;
+}
+
 const TRUMP_RANK = { J: 0, 9: 1, A: 2, 10: 3, K: 4, Q: 5, 8: 6, 7: 7 };
 const PLAIN_RANK = { A: 0, 10: 1, K: 2, Q: 3, J: 4, 9: 5, 8: 6, 7: 7 };
 const SUIT_ORDER = ['♠', '♥', '♣', '♦'];
@@ -115,7 +124,7 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
 
                 {/* Opponent player spots */}
                 {['left', 'top', 'right'].map(pos => {
-                  const absIdx = (pi + RPOS.indexOf(pos)) % 4;
+                  const absIdx = playerAtPos(pi, pos, gs.teams);
                   const p      = gs.players[absIdx];
                   if (!p) return null;
                   const pTeam      = gs.teams[0].includes(absIdx) ? 0 : 1;
@@ -196,7 +205,7 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                   return (
                     <div className={`trick-center${trickComplete ? ' trick-completing' : ''}`}>
                       {RPOS.map(pos => {
-                        const absIdx = (pi + RPOS.indexOf(pos)) % 4;
+                        const absIdx = playerAtPos(pi, pos, gs.teams);
                         const played = gs.currentTrick.find(t => t.playerIdx === absIdx);
                         const isWinner = absIdx === winnerAbs;
                         return (
@@ -326,8 +335,10 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
           </div>{/* .bottom-area */}
         </div>
       )}
-      <VoiceChat myInfo={myInfo} />
-      <VideoPanel myInfo={myInfo} />
+      <div className="media-corner">
+        <VoiceChat myInfo={myInfo} />
+        <VideoPanel myInfo={myInfo} />
+      </div>
     </div>
   );
 }
@@ -358,14 +369,19 @@ function GameRightPanel({ gs, myTeam, pi }) {
       {isPlaying && gs.runningTrickPts && (
         <div className="grp-section">
           <div className="grp-label">Points manche</div>
-          <div className="grp-pts-row">
-            <span className="grp-pts-label">NOUS</span>
-            <span className="grp-pts-val nous-val">{gs.runningTrickPts[myTeam]}</span>
-          </div>
-          <div className="grp-pts-row">
-            <span className="grp-pts-label">EUX</span>
-            <span className="grp-pts-val eux-val">{gs.runningTrickPts[1-myTeam]}</span>
-          </div>
+          {[myTeam, 1-myTeam].map((t, i) => (
+            <div key={t} className="grp-pts-row">
+              <span className="grp-pts-label">{i === 0 ? 'NOUS' : 'EUX'}</span>
+              <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end'}}>
+                <span className={`grp-pts-val ${i === 0 ? 'nous-val' : 'eux-val'}`}>
+                  {gs.runningTrickPts[t]}
+                </span>
+                {(gs.runningBelotePts?.[t] ?? 0) > 0 && (
+                  <span className="grp-belote">(+{gs.runningBelotePts[t]} bel.)</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -376,7 +392,7 @@ function GameRightPanel({ gs, myTeam, pi }) {
           <div className="grp-winner-name">{gs.players[gs.lastTrick.winner]?.name} ✓</div>
           <div className="grp-trick-grid">
             {RPOS.map(pos => {
-              const absIdx = (pi + RPOS.indexOf(pos)) % 4;
+              const absIdx = playerAtPos(pi, pos, gs.teams);
               const entry  = gs.lastTrick.cards.find(c => c.playerIdx === absIdx);
               const isWon  = entry?.playerIdx === gs.lastTrick.winner;
               return (

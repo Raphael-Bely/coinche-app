@@ -207,7 +207,26 @@ io.on('connection', socket => {
     if (!room) return;
     const r = room.setTeams(teams);
     if (r?.error) return socket.emit('err', r.error);
+    // Notify each player of their (possibly new) index so client can sync
+    if (r?.remapped) {
+      for (const [sid, newIdx] of Object.entries(r.remapped)) {
+        io.to(sid).emit('reindexed', { playerIdx: newIdx });
+      }
+    }
     broadcast(room);
+  });
+
+  // ── List public rooms ────────────────────────────────────────────────
+  socket.on('list_rooms', () => {
+    const list = [...rooms.values()]
+      .filter(r => r.settings.public && r.state === 'waiting' && r.players.length < 4)
+      .map(r => ({
+        code:      r.code,
+        players:   r.players.length,
+        maxPoints: r.settings.maxPoints,
+        scoringMode: r.settings.scoringMode,
+      }));
+    socket.emit('rooms_list', list);
   });
 
   // ── Add bot ──────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import socket from '../socket';
 import { SkinContext, SKINS } from '../skin';
 
@@ -10,7 +10,7 @@ const SCORING_MODES = [
 
 export default function Lobby() {
   const [skin, setSkin] = useContext(SkinContext);
-  const [view,    setView]    = useState('main');   // 'main' | 'create' | 'join'
+  const [view,    setView]    = useState('main');   // 'main' | 'create' | 'join' | 'public'
   const [name,    setName]    = useState('');
   const [code,    setCode]    = useState('');
   const [settings, setSettings] = useState({
@@ -18,9 +18,21 @@ export default function Lobby() {
     scoringMode:    'net',
     beloteFrom:     80,
     countAnnounces: false,
+    public:         false,
   });
+  const [publicRooms, setPublicRooms] = useState([]);
 
   const set = (k, v) => setSettings(s => ({ ...s, [k]: v }));
+
+  useEffect(() => {
+    socket.on('rooms_list', setPublicRooms);
+    return () => socket.off('rooms_list', setPublicRooms);
+  }, []);
+
+  function loadPublicRooms() {
+    socket.emit('list_rooms');
+    setView('public');
+  }
 
   function doCreate() {
     if (!name.trim()) return;
@@ -30,6 +42,11 @@ export default function Lobby() {
   function doJoin() {
     if (!name.trim() || !code.trim()) return;
     socket.emit('join_room', { name: name.trim(), code: code.trim().toUpperCase() });
+  }
+
+  function joinPublic(roomCode) {
+    if (!name.trim()) return;
+    socket.emit('join_room', { name: name.trim(), code: roomCode });
   }
 
   return (
@@ -53,7 +70,10 @@ export default function Lobby() {
               Créer une partie
             </button>
             <button className="btn-secondary" onClick={() => name.trim() && setView('join')}>
-              Rejoindre
+              Rejoindre (code)
+            </button>
+            <button className="btn-secondary" onClick={() => { if (name.trim()) loadPublicRooms(); }}>
+              🌐 Parties publiques
             </button>
           </div>
           {!name.trim() && <p className="hint">Entre ton prénom pour continuer</p>}
@@ -118,13 +138,13 @@ export default function Lobby() {
 
             {/* Belote threshold */}
             <div className="setting-group">
-              <label>Belote compte à partir de</label>
+              <label>Belote</label>
               <div className="btn-group">
-                {[80, 100].map(v => (
+                {[{ v: 80, label: '80+' }, { v: 100, label: '100+' }, { v: 'off', label: 'Désactivée' }].map(({ v, label }) => (
                   <button key={v}
                     className={`btn-opt ${settings.beloteFrom === v ? 'active' : ''}`}
                     onClick={() => set('beloteFrom', v)}>
-                    {v === 80 ? '80 (direct)' : '100 et +'}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -138,6 +158,17 @@ export default function Lobby() {
                   onClick={() => set('countAnnounces', true)}>Activées</button>
                 <button className={`btn-opt ${!settings.countAnnounces ? 'active' : ''}`}
                   onClick={() => set('countAnnounces', false)}>Désactivées</button>
+              </div>
+            </div>
+
+            {/* Visibility */}
+            <div className="setting-group">
+              <label>Visibilité</label>
+              <div className="btn-group">
+                <button className={`btn-opt ${!settings.public ? 'active' : ''}`}
+                  onClick={() => set('public', false)}>🔒 Privée</button>
+                <button className={`btn-opt ${settings.public ? 'active' : ''}`}
+                  onClick={() => set('public', true)}>🌐 Publique</button>
               </div>
             </div>
           </div>
@@ -170,6 +201,35 @@ export default function Lobby() {
             disabled={!name.trim() || code.trim().length < 4}>
             Rejoindre
           </button>
+        </div>
+      )}
+
+      {view === 'public' && (
+        <div className="lobby-card">
+          <button className="btn-back" onClick={() => setView('main')}>← Retour</button>
+          <h2>🌐 Parties publiques</h2>
+          {!name.trim() && <p className="hint">Entre ton prénom en revenant en arrière</p>}
+          <button className="btn-secondary" onClick={() => socket.emit('list_rooms')} style={{alignSelf:'flex-start',fontSize:'12px'}}>
+            ↻ Actualiser
+          </button>
+          {publicRooms.length === 0 ? (
+            <p className="hint">Aucune partie publique disponible pour l'instant.</p>
+          ) : (
+            <div className="public-rooms-list">
+              {publicRooms.map(r => (
+                <div key={r.code} className="public-room-row">
+                  <div className="pr-info">
+                    <span className="pr-code">{r.code}</span>
+                    <span className="pr-detail">{r.players}/4 joueurs · {r.maxPoints} pts</span>
+                  </div>
+                  <button className="btn-primary" disabled={!name.trim()}
+                    onClick={() => joinPublic(r.code)}>
+                    Rejoindre
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

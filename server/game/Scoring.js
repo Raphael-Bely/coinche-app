@@ -1,9 +1,10 @@
 'use strict';
-const { PLAIN_VALUES, TRUMP_VALUES, SA_VALUES } = require('./constants');
+const { PLAIN_VALUES, TRUMP_VALUES, SA_VALUES, TA_VALUES } = require('./constants');
 
 function cardValue(card, trump) {
-  if (trump === 'SA')                        return SA_VALUES[card.rank];
-  if (trump === 'TA' || card.suit === trump) return TRUMP_VALUES[card.rank];
+  if (trump === 'SA')          return SA_VALUES[card.rank];
+  if (trump === 'TA')          return TA_VALUES[card.rank];
+  if (card.suit === trump)     return TRUMP_VALUES[card.rank];
   return PLAIN_VALUES[card.rank];
 }
 

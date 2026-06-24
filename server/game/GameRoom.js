@@ -19,8 +19,9 @@ class GameRoom {
     this.settings = {
       maxPoints:      Number(settings.maxPoints)  || 1000,
       scoringMode:    settings.scoringMode         || 'net',
-      beloteFrom:     Number(settings.beloteFrom)  || 80,
+      beloteFrom:     settings.beloteFrom === 'off' ? 'off' : (Number(settings.beloteFrom) || 80),
       countAnnounces: settings.countAnnounces      !== false,
+      public:         !!settings.public,
     };
 
     this.players     = [];            // [{ socketId, name, idx, isBot? }]
@@ -54,13 +55,13 @@ class GameRoom {
     this.declaredAnn   = [null, null, null, null];
     this.announceWinnerTeam = -1;
 
-    // beloteState[i] = { K: played, Q: played }  → detect Belote/Rebelote
-    this.belotePlayed  = [
-      { K: false, Q: false },
-      { K: false, Q: false },
-      { K: false, Q: false },
-      { K: false, Q: false },
-    ];
+    // belotePlayed[player][suit] = { K, Q } — tracks per suit to support TA
+    this.belotePlayed  = Array(4).fill(null).map(() => ({
+      '♠': { K: false, Q: false },
+      '♥': { K: false, Q: false },
+      '♦': { K: false, Q: false },
+      '♣': { K: false, Q: false },
+    }));
 
     this.pendingTrickState = null; // set while trick is displayed before clearing
   }
@@ -98,8 +99,29 @@ class GameRoom {
 
   setTeams(teams) {
     if (this.state !== STATE.WAITING) return { error: 'Impossible maintenant' };
-    this.teams = teams;
-    return {};
+    if (!teams[0] || !teams[1] || teams[0].length !== 2 || teams[1].length !== 2)
+      return { error: 'Équipes invalides' };
+
+    // Remap seats so team members always sit opposite each other (Coinche diagonal rule).
+    // New seat order: [t0[0], t1[0], t0[1], t1[1]] → seats 0&2 = team 0, seats 1&3 = team 1
+    const [a, b] = teams[0];
+    const [c, d] = teams[1];
+    const newOrder = [a, c, b, d]; // new seat positions (old indices)
+    const oldPlayers = [...this.players];
+    this.players = newOrder.map((oldIdx, newIdx) => ({
+      ...oldPlayers[oldIdx],
+      idx: newIdx,
+    }));
+    this.teams   = [[0, 2], [1, 3]];
+    this.botIdxs = new Set(this.players.filter(p => p.isBot).map(p => p.idx));
+
+    // Return mapping so index.js can notify clients of their new idx
+    const remapped = {};
+    newOrder.forEach((oldIdx, newIdx) => {
+      const sid = oldPlayers[oldIdx].socketId;
+      if (sid) remapped[sid] = newIdx;
+    });
+    return { remapped };
   }
 
   // ── Game start ───────────────────────────────────────────────────────
@@ -274,18 +296,20 @@ class GameRoom {
 
     // Belote / Rebelote detection
     let beloteMsg = null;
-    if (trump !== 'SA' && trump !== 'TA' && card.suit === trump
-        && (card.rank === 'K' || card.rank === 'Q')) {
-      const bp = this.belotePlayed[pi];
-      bp[card.rank] = true;
-      if (bp.K && bp.Q) {
-        // Both K and Q of trump now played → Rebelote
-        beloteMsg = `${this.players[pi].name} : Rebelote !`;
-      } else {
-        // First of the pair: only announce if the other half is still in hand
-        const other = card.rank === 'K' ? 'Q' : 'K';
-        if (hand.some(c => c.suit === trump && c.rank === other)) {
-          beloteMsg = `${this.players[pi].name} : Belote !`;
+    const beloteOff = this.settings.beloteFrom === 'off';
+    if (!beloteOff && trump !== 'SA' && (card.rank === 'K' || card.rank === 'Q')) {
+      // In TA: K+Q of any suit; in normal: K+Q of the trump suit only
+      const beloteSuit = trump === 'TA' ? card.suit : trump;
+      if (card.suit === beloteSuit) {
+        const bp = this.belotePlayed[pi][beloteSuit];
+        bp[card.rank] = true;
+        if (bp.K && bp.Q) {
+          beloteMsg = `${this.players[pi].name} : Rebelote !`;
+        } else {
+          const other = card.rank === 'K' ? 'Q' : 'K';
+          if (hand.some(c => c.suit === beloteSuit && c.rank === other)) {
+            beloteMsg = `${this.players[pi].name} : Belote !`;
+          }
         }
       }
     }
@@ -339,12 +363,22 @@ class GameRoom {
       announcePts[wt] = sumAnnounces(list);
     }
 
-    // Belote points (+20 per pair of K+Q of trump per player)
+    // Belote points (+20 per K+Q pair of trump suit per player)
     const belotePts = [0, 0];
-    if (trump !== 'SA' && trump !== 'TA' && bidNum >= this.settings.beloteFrom) {
+    const beloteOff = this.settings.beloteFrom === 'off';
+    const beloteActive = !beloteOff && trump !== 'SA'
+      && (trump === 'TA' || bidNum >= this.settings.beloteFrom);
+    if (beloteActive) {
       for (let i = 0; i < 4; i++) {
         const bp = this.belotePlayed[i];
-        if (bp.K && bp.Q) belotePts[this.teamOf(i)] += 20;
+        const team = this.teamOf(i);
+        if (trump === 'TA') {
+          for (const suit of ['♠', '♥', '♦', '♣']) {
+            if (bp[suit].K && bp[suit].Q) belotePts[team] += 20;
+          }
+        } else {
+          if (bp[trump].K && bp[trump].Q) belotePts[team] += 20;
+        }
       }
     }
 
@@ -388,6 +422,24 @@ class GameRoom {
     if (this.state !== STATE.ROUND_OVER) return { error: 'Pas de nouvelle manche disponible' };
     this._startRound();
     return {};
+  }
+
+  _runningBelotePts() {
+    const trump = this.currentBid?.suit;
+    if (!trump || this.settings.beloteFrom === 'off' || trump === 'SA') return [0, 0];
+    const pts = [0, 0];
+    for (let i = 0; i < 4; i++) {
+      const bp = this.belotePlayed[i];
+      const team = this.teamOf(i);
+      if (trump === 'TA') {
+        for (const suit of ['♠', '♥', '♦', '♣']) {
+          if (bp[suit]?.K && bp[suit]?.Q) pts[team] += 20;
+        }
+      } else {
+        if (bp[trump]?.K && bp[trump]?.Q) pts[team] += 20;
+      }
+    }
+    return pts;
   }
 
   // ── Public state snapshot (per player) ───────────────────────────────
@@ -449,6 +501,7 @@ class GameRoom {
       // Scores & history
       totalScores:      this.totalScores,
       runningTrickPts,
+      runningBelotePts: this._runningBelotePts(),
       tricksByTeam:     [
         this.tricks.filter(t => this.teamOf(t.winner) === 0).length,
         this.tricks.filter(t => this.teamOf(t.winner) === 1).length,

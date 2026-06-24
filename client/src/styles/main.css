@@ -1022,30 +1022,38 @@ input  { font: inherit; }
   text-align: center;
 }
 
-/* ─── Video panel ────────────────────────────────────────────────────────── */
-.video-panel {
+/* ─── Media corner (voice + video stacked) ──────────────────────────────── */
+.media-corner {
   position: fixed;
   bottom: 16px;
-  left: 200px; /* right next to VoiceChat (16 + 175 + 9) */
+  left: 16px;
+  display: flex;
+  flex-direction: column-reverse; /* voice at bottom, video above */
+  align-items: flex-start;
+  gap: 8px;
+  z-index: 200;
+}
+
+/* ─── Video panel ────────────────────────────────────────────────────────── */
+.video-panel {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  z-index: 200;
 }
 
 .vp-tiles {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  max-width: 320px;
+  max-width: 380px;
 }
 
 .vp-tile {
   position: relative;
-  width: 100px;
-  height: 75px;
-  border-radius: 9px;
+  width: 140px;
+  height: 105px;
+  border-radius: 10px;
   overflow: hidden;
   background: #111;
   border: 1.5px solid rgba(255,255,255,.15);
@@ -1086,9 +1094,6 @@ input  { font: inherit; }
 
 /* ─── Voice chat ─────────────────────────────────────────────────────────── */
 .voice-chat {
-  position: fixed;
-  bottom: 16px;
-  left: 16px;
   width: 175px;
   background: rgba(10,20,15,.82);
   backdrop-filter: blur(12px);
@@ -1262,6 +1267,30 @@ input  { font: inherit; }
   border: 1px solid #1976d2;
   color: #90caf9;
 }
+
+/* ─── Running belote indicator ───────────────────────────────────────────── */
+.grp-belote {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: .3px;
+}
+
+/* ─── Public rooms list ──────────────────────────────────────────────────── */
+.public-rooms-list { display: flex; flex-direction: column; gap: 8px; }
+.public-room-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.pr-info { display: flex; flex-direction: column; gap: 2px; }
+.pr-code { font-weight: 800; font-size: 16px; letter-spacing: 2px; color: var(--accent); }
+.pr-detail { font-size: 11px; color: var(--text-dim); }
 
 /* ─── Card skins ─────────────────────────────────────────────────────────── */
 
