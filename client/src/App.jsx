@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import socket from './socket';
 import Lobby from './components/Lobby';
 import GameBoard from './components/GameBoard';
+import { SkinContext } from './skin';
 
 export default function App() {
   const [screen,  setScreen]  = useState('lobby');
@@ -9,6 +10,15 @@ export default function App() {
   const [gs,      setGs]      = useState(null);   // full game state
   const [toasts,  setToasts]  = useState([]);
   const [error,   setError]   = useState('');
+  const [skin,    setSkinRaw] = useState(() => localStorage.getItem('coincheSkin') || 'classic');
+
+  function setSkin(id) {
+    setSkinRaw(id);
+    localStorage.setItem('coincheSkin', id);
+    document.documentElement.dataset.skin = id;
+  }
+
+  useEffect(() => { document.documentElement.dataset.skin = skin; }, []);
 
   const toast = useCallback((msg) => {
     const id = Date.now() + Math.random();
@@ -34,6 +44,7 @@ export default function App() {
   }, [toast]);
 
   return (
+    <SkinContext.Provider value={[skin, setSkin]}>
     <div className="app">
       {error && <div className="error-toast">{error}</div>}
       <div className="toasts">
@@ -42,5 +53,6 @@ export default function App() {
       {screen === 'lobby' && <Lobby />}
       {screen === 'game'  && gs && myInfo && <GameBoard gs={gs} myInfo={myInfo} onLeave={leaveGame} />}
     </div>
+    </SkinContext.Provider>
   );
 }

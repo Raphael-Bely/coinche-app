@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import socket from '../socket';
+import { SkinContext, SKINS } from '../skin';
 
 const SCORING_MODES = [
   { value: 'net',          label: 'Contrat net',           desc: 'Marque la valeur du contrat ; si chute, l\'adversaire prend 160' },
@@ -8,6 +9,7 @@ const SCORING_MODES = [
 ];
 
 export default function Lobby() {
+  const [skin, setSkin] = useContext(SkinContext);
   const [view,    setView]    = useState('main');   // 'main' | 'create' | 'join'
   const [name,    setName]    = useState('');
   const [code,    setCode]    = useState('');
@@ -55,6 +57,23 @@ export default function Lobby() {
             </button>
           </div>
           {!name.trim() && <p className="hint">Entre ton prénom pour continuer</p>}
+
+          <div className="skin-picker">
+            <div className="skin-picker-lbl">Apparence des cartes</div>
+            <div className="skin-opts">
+              {SKINS.map(s => (
+                <button key={s.id}
+                  className={`skin-opt skin-opt-${s.id} ${skin === s.id ? 'active' : ''}`}
+                  onClick={() => setSkin(s.id)}>
+                  <div className="sp-card">
+                    <span className="sp-rank">A</span>
+                    <span className="sp-suit">♥</span>
+                  </div>
+                  <span className="skin-opt-lbl">{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
