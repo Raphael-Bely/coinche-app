@@ -1022,6 +1022,68 @@ input  { font: inherit; }
   text-align: center;
 }
 
+/* ─── Video panel ────────────────────────────────────────────────────────── */
+.video-panel {
+  position: fixed;
+  bottom: 16px;
+  left: 200px; /* right next to VoiceChat (16 + 175 + 9) */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  z-index: 200;
+}
+
+.vp-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 320px;
+}
+
+.vp-tile {
+  position: relative;
+  width: 100px;
+  height: 75px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #111;
+  border: 1.5px solid rgba(255,255,255,.15);
+  box-shadow: 0 3px 12px rgba(0,0,0,.5);
+}
+.vp-local .vp-vid { transform: scaleX(-1); } /* mirror selfie */
+.vp-vid {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.vp-label {
+  position: absolute;
+  bottom: 3px;
+  left: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,.9);
+}
+
+.btn-cam {
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,.15);
+  background: rgba(10,20,15,.82);
+  backdrop-filter: blur(12px);
+  color: var(--text-dim);
+  box-shadow: 0 3px 12px rgba(0,0,0,.4);
+  transition: all .15s;
+}
+.btn-cam:hover  { background: rgba(255,255,255,.1); color: var(--text); }
+.btn-cam.cam-on { background: rgba(183,28,28,.35); border-color: #c62828; color: #ff8a80; }
+.btn-cam.cam-on:hover { background: rgba(183,28,28,.55); }
+
 /* ─── Voice chat ─────────────────────────────────────────────────────────── */
 .voice-chat {
   position: fixed;

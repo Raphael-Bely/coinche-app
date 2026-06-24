@@ -17,28 +17,32 @@ const io   = new Server(http, { cors: { origin: '*' } });
 
 const rooms      = new Map(); // code → GameRoom
 const playerRoom = new Map(); // socketId → code
-const voiceRooms = new Map(); // code → Map<socketId, { socketId, playerIdx, name }>
+const voiceRooms = new Map();
+const videoRooms = new Map();
 
-function getVoiceRoom(code) {
-  if (!voiceRooms.has(code)) voiceRooms.set(code, new Map());
-  return voiceRooms.get(code);
+function makeMediaRoom(map, code) {
+  if (!map.has(code)) map.set(code, new Map());
+  return map.get(code);
 }
-function broadcastVoiceUsers(code) {
-  const vr = voiceRooms.get(code);
+function broadcastMediaUsers(map, code, event) {
+  const vr = map.get(code);
   if (!vr) return;
-  const users = [...vr.values()].map(({ playerIdx, name }) => ({ playerIdx, name }));
-  io.to(code).emit('voice_users', users);
+  const users = [...vr.values()].map(({ playerIdx, name, socketId }) => ({ playerIdx, name, socketId }));
+  io.to(code).emit(event, users);
 }
-function leaveVoiceRoom(socketId) {
+function leaveMediaRoom(map, broadcastEvent, peerLeftEvent, socketId) {
   const code = playerRoom.get(socketId);
   if (!code) return;
-  const vr = voiceRooms.get(code);
+  const vr = map.get(code);
   if (!vr || !vr.has(socketId)) return;
   vr.delete(socketId);
   for (const { socketId: sid } of vr.values())
-    io.to(sid).emit('voice_peer_left', { socketId });
-  broadcastVoiceUsers(code);
+    io.to(sid).emit(peerLeftEvent, { socketId });
+  broadcastMediaUsers(map, code, broadcastEvent);
 }
+
+function leaveVoiceRoom(sid) { leaveMediaRoom(voiceRooms, 'voice_users', 'voice_peer_left', sid); }
+function leaveVideoRoom(sid) { leaveMediaRoom(videoRooms, 'video_users', 'video_peer_left', sid); }
 
 function genCode() {
   let c;
@@ -300,32 +304,34 @@ io.on('connection', socket => {
     broadcastAndBotAct(room);
   });
 
-  // ── Voice chat ───────────────────────────────────────────────────────
-  socket.on('voice_join', () => {
+  // ── Voice + Video chat ───────────────────────────────────────────────
+  function handleMediaJoin(map, broadcastEvent, peerJoinedEvent) {
     const code = playerRoom.get(socket.id);
     const room = rooms.get(code);
     if (!room) return;
     const pi     = room._pidx(socket.id);
     const player = room.players[pi];
     if (!player) return;
-    const vr       = getVoiceRoom(code);
+    const vr       = makeMediaRoom(map, code);
     const existing = [...vr.values()];
-    socket.emit('voice_peers', existing);
+    socket.emit(broadcastEvent.replace('_users', '_peers'), existing);
     for (const { socketId } of existing)
-      io.to(socketId).emit('voice_peer_joined', { socketId: socket.id, playerIdx: pi, name: player.name });
+      io.to(socketId).emit(peerJoinedEvent, { socketId: socket.id, playerIdx: pi, name: player.name });
     vr.set(socket.id, { socketId: socket.id, playerIdx: pi, name: player.name });
-    broadcastVoiceUsers(code);
-  });
+    broadcastMediaUsers(map, code, broadcastEvent);
+  }
 
-  socket.on('voice_leave', () => leaveVoiceRoom(socket.id));
-
-  socket.on('voice_signal', ({ to, signal }) => {
-    io.to(to).emit('voice_signal', { from: socket.id, signal });
-  });
+  socket.on('voice_join',   () => handleMediaJoin(voiceRooms, 'voice_users', 'voice_peer_joined'));
+  socket.on('video_join',   () => handleMediaJoin(videoRooms, 'video_users', 'video_peer_joined'));
+  socket.on('voice_leave',  () => leaveVoiceRoom(socket.id));
+  socket.on('video_leave',  () => leaveVideoRoom(socket.id));
+  socket.on('voice_signal', ({ to, signal }) => io.to(to).emit('voice_signal', { from: socket.id, signal }));
+  socket.on('video_signal', ({ to, signal }) => io.to(to).emit('video_signal', { from: socket.id, signal }));
 
   // ── Disconnect ───────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     leaveVoiceRoom(socket.id);
+    leaveVideoRoom(socket.id);
     const code = playerRoom.get(socket.id);
     if (!code) return;
     const room = rooms.get(code);

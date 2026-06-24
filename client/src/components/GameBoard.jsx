@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import socket from '../socket';
 import Card from './Card';
 import VoiceChat from './VoiceChat';
+import VideoPanel from './VideoPanel';
 
 const BID_STEPS    = [80, 90, 100, 110, 120, 130, 140, 150, 160, 'Capot'];
 const SUIT_BUTTONS = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
@@ -326,6 +327,7 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
         </div>
       )}
       <VoiceChat myInfo={myInfo} />
+      <VideoPanel myInfo={myInfo} />
     </div>
   );
 }
