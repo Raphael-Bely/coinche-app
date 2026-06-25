@@ -109,7 +109,13 @@ function scheduleBotActions(room) {
     setTimeout(() => {
       if (room.state !== 'playing' || room.currentPlayerIdx !== snap || room.pendingTrickState) return;
       const r = botDoPlay(room, snap);
-      if (r?.beloteMsg) notify(room, r.beloteMsg);
+      if (r?.beloteMsg) {
+        notify(room, r.beloteMsg);
+        io.to(room.code).emit('belote_flash', {
+          playerIdx: snap,
+          type: r.beloteMsg.includes('Rebelote') ? 'rebelote' : 'belote',
+        });
+      }
       broadcast(room); // show the card immediately
       if (r?.trickDisplayed) {
         setTimeout(() => {
@@ -147,17 +153,26 @@ function botDoBidClassique(room, pi) {
   return room.placeBid(sid, bid.value, bid.suit);
 }
 
+function bidOrd(v) {
+  if (!v) return 70;
+  if (v === 'Capot')           return 250;
+  if (v === 'Capot Beloté')    return 270;
+  if (v === 'Générale')        return 400;
+  if (v === 'Générale Beloté') return 420;
+  return Number(v) || 0;
+}
+
 function botDoBidRandom(room, pi) {
   const sid    = bsid(room, pi);
   const cur    = room.currentBid;
-  const curNum = cur ? (cur.value === 'Capot' ? 999 : Number(cur.value)) : 70;
+  const curNum = bidOrd(cur?.value);
   const noBid  = !cur;
   const passes = room.bids.filter(b => b.type === 'pass').length;
 
   if (!(noBid && passes >= 3) && Math.random() < 0.55) {
     return room.passBid(sid);
   }
-  const valid = BOT_STEPS.filter(v => (v === 'Capot' ? 999 : Number(v)) > curNum);
+  const valid = BOT_STEPS.filter(v => bidOrd(v) > curNum);
   if (!valid.length) return room.passBid(sid);
 
   const value = valid[Math.floor(Math.random() * Math.ceil(valid.length / 2))];
@@ -321,7 +336,13 @@ io.on('connection', socket => {
     if (!room) return;
     const r = room.playCard(socket.id, cardId);
     if (r.error) return socket.emit('err', r.error);
-    if (r.beloteMsg) notify(room, r.beloteMsg);
+    if (r.beloteMsg) {
+      notify(room, r.beloteMsg);
+      io.to(room.code).emit('belote_flash', {
+        playerIdx: r.belotePlayerIdx ?? -1,
+        type: r.beloteMsg.includes('Rebelote') ? 'rebelote' : 'belote',
+      });
+    }
     broadcast(room); // show card immediately
     if (r.trickDisplayed) {
       setTimeout(() => {
@@ -338,7 +359,7 @@ io.on('connection', socket => {
   socket.on('next_round', () => {
     const room = rooms.get(playerRoom.get(socket.id));
     if (!room) return;
-    const r = room.nextRound(socket.id);
+    const r = room.nextRound();
     if (r.error) return socket.emit('err', r.error);
     broadcastAndBotAct(room);
   });
@@ -367,6 +388,15 @@ io.on('connection', socket => {
   socket.on('voice_signal', ({ to, signal }) => io.to(to).emit('voice_signal', { from: socket.id, signal }));
   socket.on('video_signal', ({ to, signal }) => io.to(to).emit('video_signal', { from: socket.id, signal }));
 
+  // ── Next round / Restart ─────────────────────────────────────────────
+  socket.on('restart_game', () => {
+    const room = rooms.get(playerRoom.get(socket.id));
+    if (!room) return;
+    const r = room.restartGame();
+    if (r.error) return socket.emit('err', r.error);
+    broadcastAndBotAct(room);
+  });
+
   // ── Disconnect ───────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     leaveVoiceRoom(socket.id);
@@ -376,7 +406,9 @@ io.on('connection', socket => {
     const room = rooms.get(code);
     if (room) {
       room.removePlayer(socket.id);
-      if (room.players.length === 0) rooms.delete(code);
+      // Delete room if no human player remains (prevents ghost bot-only rooms)
+      const hasHuman = room.players.some(p => !p.isBot);
+      if (!hasHuman) rooms.delete(code);
       else broadcast(room);
     }
     playerRoom.delete(socket.id);

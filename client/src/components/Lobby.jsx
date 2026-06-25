@@ -11,7 +11,7 @@ const SCORING_MODES = [
 export default function Lobby() {
   const [skin, setSkin] = useContext(SkinContext);
   const [view,    setView]    = useState('main');   // 'main' | 'create' | 'join' | 'public'
-  const [name,    setName]    = useState('');
+  const [name,    setName]    = useState(() => localStorage.getItem('coincheName') || '');
   const [code,    setCode]    = useState('');
   const [settings, setSettings] = useState({
     maxPoints:      1000,
@@ -34,18 +34,26 @@ export default function Lobby() {
     setView('public');
   }
 
+  function saveName(n) {
+    setName(n);
+    if (n.trim()) localStorage.setItem('coincheName', n.trim());
+  }
+
   function doCreate() {
     if (!name.trim()) return;
+    localStorage.setItem('coincheName', name.trim());
     socket.emit('create_room', { name: name.trim(), settings });
   }
 
   function doJoin() {
     if (!name.trim() || !code.trim()) return;
+    localStorage.setItem('coincheName', name.trim());
     socket.emit('join_room', { name: name.trim(), code: code.trim().toUpperCase() });
   }
 
   function joinPublic(roomCode) {
     if (!name.trim()) return;
+    localStorage.setItem('coincheName', name.trim());
     socket.emit('join_room', { name: name.trim(), code: roomCode });
   }
 
@@ -61,7 +69,7 @@ export default function Lobby() {
         <div className="lobby-card">
           <div className="field">
             <label>Ton prénom</label>
-            <input value={name} onChange={e => setName(e.target.value)}
+            <input value={name} onChange={e => saveName(e.target.value)}
               placeholder="Ex : Thomas" maxLength={20}
               onKeyDown={e => e.key === 'Enter' && name.trim() && setView('create')} />
           </div>
@@ -103,7 +111,7 @@ export default function Lobby() {
 
           <div className="field">
             <label>Ton prénom</label>
-            <input value={name} onChange={e => setName(e.target.value)} maxLength={20} />
+            <input value={name} onChange={e => saveName(e.target.value)} maxLength={20} />
           </div>
 
           <div className="settings-grid">
@@ -184,7 +192,7 @@ export default function Lobby() {
           <h2>Rejoindre</h2>
           <div className="field">
             <label>Ton prénom</label>
-            <input value={name} onChange={e => setName(e.target.value)} maxLength={20} />
+            <input value={name} onChange={e => saveName(e.target.value)} maxLength={20} />
           </div>
           <div className="field">
             <label>Code de la salle</label>

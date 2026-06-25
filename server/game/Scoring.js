@@ -30,17 +30,32 @@ function trickPoints(tricks, trump) {
  * Coinche ×2, surcoinche ×4 applied to game scores.
  * Announces and belote are NOT multiplied (per most common house rules).
  */
+// Numeric ordering for comparison/scoring (must match GameRoom.BID_NUMERIC)
+function bidNumeric(v) {
+  if (v === 'Capot')           return 250;
+  if (v === 'Capot Beloté')    return 270;
+  if (v === 'Générale')        return 400;
+  if (v === 'Générale Beloté') return 420;
+  return Number(v);
+}
+
 function scoreRound({
   tricks, trump,
-  contractTeam, contractValue,
+  contractTeam, contractValue, contractPlayerIdx,
   isCoinched, isSurcoinched,
   announcePts,   // [t0, t1]
   belotePts,     // [t0, t1]
   scoringMode,
 }) {
-  const mult    = isSurcoinched ? 4 : isCoinched ? 2 : 1;
-  const isCapot = contractValue === 'Capot';
-  const bidNum  = isCapot ? 250 : Number(contractValue);
+  const mult = isSurcoinched ? 4 : isCoinched ? 2 : 1;
+
+  const isCapot       = contractValue === 'Capot';
+  const isCapotBelote = contractValue === 'Capot Beloté';
+  const isGenerale    = contractValue === 'Générale';
+  const isGenBelote   = contractValue === 'Générale Beloté';
+  const isAllTricks   = isCapot || isCapotBelote || isGenerale || isGenBelote;
+
+  const bidNum  = bidNumeric(contractValue);
   const defTeam = 1 - contractTeam;
 
   const [tp0, tp1] = trickPoints(tricks, trump);
@@ -49,18 +64,29 @@ function scoreRound({
 
   // Determine chute (contract failure)
   let chute;
-  if (isCapot) {
+  if (isCapot || isCapotBelote) {
     chute = !tricks.every(t => t.winner % 2 === contractTeam);
+    if (!chute && isCapotBelote) chute = (belotePts[contractTeam] ?? 0) === 0;
+  } else if (isGenerale || isGenBelote) {
+    // Contracting player must win all 8 tricks solo
+    chute = contractPlayerIdx < 0
+      ? !tricks.every(t => t.winner % 2 === contractTeam)
+      : !tricks.every(t => t.winner === contractPlayerIdx);
+    if (!chute && isGenBelote) chute = (belotePts[contractTeam] ?? 0) === 0;
   } else {
     chute = (myTrickPts + announcePts[contractTeam] + belotePts[contractTeam]) < bidNum;
   }
+
+  // Penalty for chute
+  const chuteValue = (isGenerale || isGenBelote) ? 400
+                   : (isCapot   || isCapotBelote) ? 250
+                   : 160;
 
   let t0 = 0, t1 = 0;
 
   if (scoringMode === 'net') {
     if (chute) {
-      const penalty = isCapot ? 250 : 160;
-      if (defTeam === 0) t0 = penalty * mult; else t1 = penalty * mult;
+      if (defTeam === 0) t0 = chuteValue * mult; else t1 = chuteValue * mult;
     } else {
       if (contractTeam === 0) t0 = bidNum * mult; else t1 = bidNum * mult;
     }

@@ -4,17 +4,27 @@ import Card from './Card';
 import VoiceChat from './VoiceChat';
 import VideoPanel from './VideoPanel';
 
-const BID_STEPS    = [80, 90, 100, 110, 120, 130, 140, 150, 160, 'Capot'];
+const BID_STEPS    = [80, 90, 100, 110, 120, 130, 140, 150, 160, 'Capot', 'Capot Beloté', 'Générale', 'Générale Beloté'];
 const SUIT_BUTTONS = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
+
+function bidOrd(v) {
+  if (v === 'Capot')           return 250;
+  if (v === 'Capot Beloté')    return 270;
+  if (v === 'Générale')        return 400;
+  if (v === 'Générale Beloté') return 420;
+  return Number(v) || 0;
+}
 const RPOS         = ['bottom', 'right', 'top', 'left'];
 const CARDINAL     = { bottom: 'S', right: 'E', top: 'N', left: 'O' };
 
-// Always show partner at top (N), opponents at E/W — regardless of raw player indices
+// Always show partner at top (N); right/left follow seat-order so all players
+// see the same counter-clockwise rotation (pi+1 is always to the right).
 function playerAtPos(pi, pos, teams) {
-  const myTeam   = teams[0].includes(pi) ? teams[0] : teams[1];
-  const partner  = myTeam.find(i => i !== pi) ?? -1;
-  const opps     = [0, 1, 2, 3].filter(i => i !== pi && i !== partner);
-  const map = { bottom: pi, top: partner, right: opps[0] ?? -1, left: opps[1] ?? -1 };
+  const myTeam  = teams[0].includes(pi) ? teams[0] : teams[1];
+  const partner = myTeam.find(i => i !== pi) ?? -1;
+  const right   = (pi + 1) % 4;
+  const left    = (pi + 3) % 4;
+  const map     = { bottom: pi, top: partner, right, left };
   return map[pos] ?? -1;
 }
 
@@ -49,15 +59,37 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
   const pi     = myInfo.playerIdx;
   const myTeam = gs.teams[0].includes(pi) ? 0 : 1;
 
-  const [bidValue, setBidValue] = useState(null);
-  const [bidSuit,  setBidSuit]  = useState(null);
-  const [selAnn,   setSelAnn]   = useState(null);
+  const [bidValue,     setBidValue]     = useState(null);
+  const [bidSuit,      setBidSuit]      = useState(null);
+  const [selAnn,       setSelAnn]       = useState(null);
+  const [beloteFlash,  setBeloteFlash]  = useState({}); // { [playerIdx]: 'belote'|'rebelote' }
 
   useEffect(() => {
     if (gs.state === 'announce' && selAnn === null)
       setSelAnn(gs.myDetected.map(a => a.id));
     if (gs.state !== 'announce') setSelAnn(null);
   }, [gs.state]); // eslint-disable-line
+
+  // Belote flash badge
+  useEffect(() => {
+    function handler({ playerIdx, type }) {
+      setBeloteFlash(prev => ({ ...prev, [playerIdx]: type }));
+      setTimeout(() => setBeloteFlash(prev => {
+        const copy = { ...prev }; delete copy[playerIdx]; return copy;
+      }), 3500);
+    }
+    socket.on('belote_flash', handler);
+    return () => socket.off('belote_flash', handler);
+  }, []);
+
+  // Auto-play last card (8th trick) so user doesn't have to click the obvious move
+  useEffect(() => {
+    if (gs.state === 'playing' && gs.currentPlayerIdx === pi &&
+        gs.hand.length === 1 && gs.playableIds.length === 1) {
+      const tid = setTimeout(() => socket.emit('play_card', { cardId: gs.hand[0].id }), 350);
+      return () => clearTimeout(tid);
+    }
+  }, [gs.state, gs.currentPlayerIdx, pi, gs.hand.length]); // eslint-disable-line
 
   const teamName = (t) => gs.teams[t].map(i => gs.players[i]?.name || '?').join(' & ');
 
@@ -67,8 +99,7 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
   const canSurcoinche = gs.state === 'bidding' && gs.coinched && !gs.surcoinched
     && gs.currentBid && gs.teams[myTeam].includes(gs.currentBid.playerIdx);
 
-  const curBidNum = gs.currentBid
-    ? (gs.currentBid.value === 'Capot' ? 999 : Number(gs.currentBid.value)) : 70;
+  const curBidNum = gs.currentBid ? bidOrd(gs.currentBid.value) : 70;
 
   function doPlayCard(cardId) {
     if (gs.state !== 'playing' || gs.currentPlayerIdx !== pi) return;
@@ -143,6 +174,9 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                         <span className="ps-cardinal">{card}</span>
                         <span className="ps-name">{p.name}</span>
                         {gs.state === 'bidding' && gs.biddingIdx === absIdx && <span className="thinking">…</span>}
+                        {beloteFlash[absIdx] && (
+                          <span className="belote-flash">{beloteFlash[absIdx] === 'rebelote' ? 'Rebelote !' : 'Belote !'}</span>
+                        )}
                       </div>
 
                       {/* Contract tag */}
@@ -261,7 +295,9 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
             )}
 
             {(gs.state === 'round_over' || gs.state === 'game_over') && gs.roundResult && (
-              <RoundModal gs={gs} myTeam={myTeam} teamName={teamName} />
+              <div className="round-modal-overlay">
+                <RoundModal gs={gs} myTeam={myTeam} teamName={teamName} />
+              </div>
             )}
 
             {/* My hand */}
@@ -272,6 +308,9 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                   <span className="ps-cardinal my-cardinal">S</span>
                   <span className="my-ps-name">{gs.players[pi]?.name} (moi)</span>
                   {gs.state === 'bidding' && gs.biddingIdx === pi && <span className="thinking"> …</span>}
+                  {beloteFlash[pi] && (
+                    <span className="belote-flash">{beloteFlash[pi] === 'rebelote' ? 'Rebelote !' : 'Belote !'}</span>
+                  )}
 
                   {gs.currentBid && gs.currentBid.playerIdx === pi && (
                     <div className={`contract-tag ${gs.surcoinched ? 'sur' : gs.coinched ? 'co' : ''}`}>
@@ -520,8 +559,7 @@ function BiddingPanel({ gs, pi, isMyTurn, canCoinche, canSurcoinche, curBidNum,
         <div className="bid-popup">
           <div className="bpop-values">
             {BID_STEPS.map(v => {
-              const num     = v === 'Capot' ? 999 : v;
-              const disabled = num <= curBidNum;
+              const disabled = bidOrd(v) <= curBidNum;
               return (
                 <button key={v}
                   className={`bpv ${bidValue === v ? 'sel' : ''} ${disabled ? 'dis' : ''}`}
@@ -651,6 +689,9 @@ function RoundModal({ gs, myTeam, teamName }) {
           <div className="go-trophy">🏆</div>
           <h2>{teamName(winTeam)} remporte la partie !</h2>
           <p>Score final : {r.totalAfter[0]} — {r.totalAfter[1]}</p>
+          <button className="btn-primary" style={{ marginTop: 12 }} onClick={() => socket.emit('restart_game')}>
+            Rejouer
+          </button>
         </div>
       )}
     </div>

@@ -25,6 +25,14 @@ export default function App() {
 
   useEffect(() => { document.documentElement.dataset.skin = skin; }, []);
 
+  // Preload all 32 card images so they appear instantly in-game
+  useEffect(() => {
+    const RANKS = ['7','8','9','0','J','Q','K','A']; // '0' = 10
+    const SUITS = ['S','H','D','C'];
+    for (const r of RANKS)
+      for (const s of SUITS) { const img = new Image(); img.src = `/cards/${r}${s}.png`; }
+  }, []);
+
   const toast = useCallback((msg) => {
     const id = Date.now() + Math.random();
     setToasts(t => [...t, { id, msg }]);

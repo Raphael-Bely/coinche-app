@@ -137,6 +137,16 @@ class GameRoom {
     const pi = this._pidx(socketId);
     if (pi !== 0) return { error: 'Seul le créateur peut lancer la partie' };
     if (this.players.length !== 4) return { error: 'Il faut 4 joueurs' };
+    this.dealerIdx = Math.floor(Math.random() * 4);
+    this._startRound();
+    return {};
+  }
+
+  restartGame() {
+    if (this.state !== STATE.GAME_OVER) return { error: 'Pas de fin de partie' };
+    this.totalScores  = [0, 0];
+    this.roundHistory = [];
+    this.dealerIdx    = Math.floor(Math.random() * 4);
     this._startRound();
     return {};
   }
@@ -152,18 +162,27 @@ class GameRoom {
   }
 
   // ── Bidding ──────────────────────────────────────────────────────────
+  static _bidOrd(v) {
+    if (v === 'Capot')           return 250;
+    if (v === 'Capot Beloté')    return 270;
+    if (v === 'Générale')        return 400;
+    if (v === 'Générale Beloté') return 420;
+    return Number(v);
+  }
+
   placeBid(socketId, value, suit) {
     const pi = this._pidx(socketId);
     if (this.state !== STATE.BIDDING)  return { error: 'Pas en phase de mise' };
     if (pi !== this.biddingIdx)        return { error: "Ce n'est pas ton tour" };
 
-    const validSuits = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
-    if (!validSuits.includes(suit))    return { error: 'Couleur invalide' };
+    const validSuits  = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
+    const validValues = new Set(['80','90','100','110','120','130','140','150','160',
+                                 'Capot','Capot Beloté','Générale','Générale Beloté']);
+    if (!validSuits.includes(suit))        return { error: 'Couleur invalide' };
+    if (!validValues.has(String(value)))   return { error: 'Valeur invalide' };
 
-    const num    = value === 'Capot' ? 999 : Number(value);
-    const curNum = this.currentBid
-      ? (this.currentBid.value === 'Capot' ? 999 : Number(this.currentBid.value))
-      : 70;
+    const num    = GameRoom._bidOrd(value);
+    const curNum = this.currentBid ? GameRoom._bidOrd(this.currentBid.value) : 70;
 
     if (num <= curNum) return { error: 'Doit surenchérir' };
     if (num < 80)      return { error: 'Mise minimum : 80' };
@@ -324,13 +343,13 @@ class GameRoom {
 
     this.currentTrick.push({ playerIdx: pi, card });
 
-    if (this.currentTrick.length === 4) return this._completeTrick(beloteMsg);
+    if (this.currentTrick.length === 4) return this._completeTrick(beloteMsg, pi);
 
     this.currentPlayerIdx = (this.currentPlayerIdx + 1) % 4;
-    return { beloteMsg };
+    return { beloteMsg, belotePlayerIdx: pi };
   }
 
-  _completeTrick(beloteMsg) {
+  _completeTrick(beloteMsg, belotePlayerIdx = -1) {
     const trump  = this.currentBid.suit;
     const winner = trickWinner(this.currentTrick, trump);
     this.tricks.push({ cards: [...this.currentTrick], winner });
@@ -340,14 +359,15 @@ class GameRoom {
     this.pendingTrickState = {
       winner,
       beloteMsg,
+      belotePlayerIdx,
       isLastTrick: this.hands[0].length === 0,
     };
-    return { trickDisplayed: true, beloteMsg };
+    return { trickDisplayed: true, beloteMsg, belotePlayerIdx };
   }
 
   advanceTrick() {
     if (!this.pendingTrickState) return { error: 'Pas de pli en attente' };
-    const { winner, beloteMsg, isLastTrick } = this.pendingTrickState;
+    const { winner, beloteMsg, belotePlayerIdx, isLastTrick } = this.pendingTrickState;
     this.pendingTrickState = null;
     this.currentTrick = [];
     if (isLastTrick) return this._endRound(beloteMsg);
@@ -393,11 +413,12 @@ class GameRoom {
     const result = scoreRound({
       tricks: this.tricks, trump,
       contractTeam,
-      contractValue: this.currentBid.value,
-      isCoinched:    this.coinched,
-      isSurcoinched: this.surcoinched,
+      contractValue:     this.currentBid.value,
+      contractPlayerIdx: this.currentBid.playerIdx,
+      isCoinched:        this.coinched,
+      isSurcoinched:     this.surcoinched,
       announcePts, belotePts,
-      scoringMode:   this.settings.scoringMode,
+      scoringMode:       this.settings.scoringMode,
     });
 
     this.totalScores[0] += result.team0Score;
@@ -426,7 +447,7 @@ class GameRoom {
     return { roundDone: true, beloteMsg };
   }
 
-  nextRound(socketId) {
+  nextRound() {
     if (this.state !== STATE.ROUND_OVER) return { error: 'Pas de nouvelle manche disponible' };
     this._startRound();
     return {};

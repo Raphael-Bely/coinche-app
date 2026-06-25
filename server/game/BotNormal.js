@@ -77,11 +77,18 @@ function evalHand(hand, suit) {
   return score;
 }
 
+function bidOrd(v) {
+  if (!v) return 70;
+  if (v === 'Capot')           return 250;
+  if (v === 'Capot Beloté')    return 270;
+  if (v === 'Générale')        return 400;
+  if (v === 'Générale Beloté') return 420;
+  return Number(v);
+}
+
 // Returns { value, suit } to bid, or null to pass
 function chooseBid(hand, currentBid) {
-  const curNum = currentBid
-    ? (currentBid.value === 'Capot' ? 999 : Number(currentBid.value))
-    : 70;
+  const curNum = bidOrd(currentBid?.value);
 
   const BID_STEPS = [80, 90, 100, 110, 120, 130, 140, 150, 160];
 
@@ -196,9 +203,19 @@ function normalPlay(room, pi) {
   const isLast      = trick.length === 3;
 
   if (partnerWins) {
-    // Partner winning — contribute cheapest non-trump; avoid wasting high cards
+    if (isLast) {
+      // Last to play, partner wins — maximise points for our team
+      const nonTrump = playable.filter(c => !isTrump(c, trump));
+      const best = (nonTrump.length ? nonTrump : playable)
+        .reduce((max, c) => pointValue(c, trump) > pointValue(max, trump) ? c : max);
+      return room.playCard(sid, best.id);
+    }
+    // Not last — dump cheapest non-ace/10, preserve high cards for future leads
     const nonTrump = playable.filter(c => !isTrump(c, trump));
-    const dump = nonTrump.length ? cheapest(nonTrump, trump) : cheapest(playable, trump);
+    const safe = nonTrump.filter(c => c.rank !== 'A' && c.rank !== '10');
+    const dump = safe.length    ? cheapest(safe, trump)
+               : nonTrump.length ? cheapest(nonTrump, trump)
+               : cheapest(playable, trump);
     return room.playCard(sid, dump.id);
   }
 
@@ -220,9 +237,7 @@ function normalPlay(room, pi) {
 const PLAIN_SUITS = ['♠', '♥', '♦', '♣'];
 
 function chooseBidClassique(hand, currentBid, partnerBid) {
-  const curNum = currentBid
-    ? (currentBid.value === 'Capot' ? 999 : Number(currentBid.value))
-    : 70;
+  const curNum = bidOrd(currentBid?.value);
 
   const BID_STEPS = [80, 90, 100, 110, 120, 130, 140, 150, 160];
 
