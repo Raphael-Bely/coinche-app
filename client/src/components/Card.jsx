@@ -23,7 +23,7 @@ export default function Card({ card, selected, playable = true, onClick, small, 
 
   return (
     <div className={classes} onClick={onClick}>
-      <img src={imgPath(card)} alt={`${card.rank}${card.suit}`} className="card-img" draggable={false} />
+      <img src={imgPath(card)} alt={`${card.rank}${card.suit}`} className="card-img" draggable={false} loading="eager" />
     </div>
   );
 }

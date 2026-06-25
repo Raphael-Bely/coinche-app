@@ -395,12 +395,24 @@ input  { font: inherit; }
   height: 100%;
   max-height: 480px;
   position: relative;
-  background: radial-gradient(ellipse, var(--felt-lt) 20%, var(--felt) 100%);
+  background:
+    radial-gradient(ellipse, var(--felt-lt) 20%, var(--felt) 100%);
   border-radius: 50%;
-  box-shadow: inset 0 0 50px rgba(0,0,0,.35), 0 0 0 7px rgba(0,0,0,.3);
+  box-shadow: inset 0 0 60px rgba(0,0,0,.4), 0 0 0 7px rgba(0,0,0,.3), 0 0 0 9px rgba(255,255,255,.04);
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+/* Subtle hex-dot texture overlay */
+.table-felt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background-image: radial-gradient(circle, rgba(255,255,255,.04) 1px, transparent 1px);
+  background-size: 22px 22px;
+  pointer-events: none;
 }
 
 /* ─── Player spots (cardinal direction style) ───────────────────────────── */
@@ -429,7 +441,14 @@ input  { font: inherit; }
 }
 .ps-spot.ps-partner  { border-color: rgba(76,175,80,.5); }
 .ps-spot.ps-opponent { border-color: rgba(183,28,28,.4); }
-.ps-spot.ps-active   { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+.ps-spot.ps-active   {
+  border-color: var(--accent);
+  animation: activePlayerPulse 1.4s ease-in-out infinite;
+}
+@keyframes activePlayerPulse {
+  0%,100% { box-shadow: 0 0 0 2px var(--accent), 0 0 8px rgba(249,168,37,.3); }
+  50%      { box-shadow: 0 0 0 3px var(--accent), 0 0 22px rgba(249,168,37,.75); }
+}
 
 .ps-cardinal {
   font-size: 13px;
@@ -562,36 +581,41 @@ input  { font: inherit; }
 .opp-hand.h-sideways .card-back-sm:first-child { margin-top: 0; }
 
 /* ─── Trick animations ───────────────────────────────────────────────────── */
-@keyframes fromBottom { from { opacity:0; transform:translateY(70px) scale(.7); } to { opacity:1; transform:translateY(0) scale(1); } }
-@keyframes fromTop    { from { opacity:0; transform:translateY(-70px) scale(.7); } to { opacity:1; transform:translateY(0) scale(1); } }
-@keyframes fromLeft   { from { opacity:0; transform:translateX(-70px) scale(.7); } to { opacity:1; transform:translateX(0) scale(1); } }
-@keyframes fromRight  { from { opacity:0; transform:translateX(70px) scale(.7); } to { opacity:1; transform:translateX(0) scale(1); } }
-@keyframes trickFade  { to   { opacity:0; transform:scale(.45); } }
-@keyframes winnerPop  { 0%{transform:scale(1)} 35%{transform:scale(1.12)} 70%{transform:scale(.97)} 100%{transform:scale(1)} }
+@keyframes fromBottom { from { opacity:0; transform:translateY(55px) scale(.72); } to { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes fromTop    { from { opacity:0; transform:translateY(-55px) scale(.72); } to { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes fromLeft   { from { opacity:0; transform:translateX(-55px) scale(.72); } to { opacity:1; transform:translateX(0) scale(1); } }
+@keyframes fromRight  { from { opacity:0; transform:translateX(55px) scale(.72); } to { opacity:1; transform:translateX(0) scale(1); } }
+@keyframes trickFade  { to   { opacity:0; transform:scale(.42); } }
+@keyframes winnerPop  {
+  0%  { transform:scale(1); }
+  30% { transform:scale(1.15) rotate(1deg); }
+  65% { transform:scale(.97) rotate(-.5deg); }
+  100%{ transform:scale(1) rotate(0); }
+}
 @keyframes lastTrickIn{ from { opacity:0; transform:scale(.7); } to { opacity:1; transform:scale(1); } }
 
 /* Play-in per position (key remount triggers fresh animation) */
-.ts-bottom .card { animation: fromBottom .22s cubic-bezier(.15,.85,.35,1); }
-.ts-top    .card { animation: fromTop    .22s cubic-bezier(.15,.85,.35,1); }
-.ts-left   .card { animation: fromLeft   .22s cubic-bezier(.15,.85,.35,1); }
-.ts-right  .card { animation: fromRight  .22s cubic-bezier(.15,.85,.35,1); }
+.ts-bottom .card { animation: fromBottom .18s cubic-bezier(.12,.8,.25,1.15); }
+.ts-top    .card { animation: fromTop    .18s cubic-bezier(.12,.8,.25,1.15); }
+.ts-left   .card { animation: fromLeft   .18s cubic-bezier(.12,.8,.25,1.15); }
+.ts-right  .card { animation: fromRight  .18s cubic-bezier(.12,.8,.25,1.15); }
 
-/* Trick complete: re-enter then fade (timing: 0.2s in, then 0.5s fade after 0.7s hold) */
-.trick-completing .ts-bottom .card { animation: fromBottom .2s ease-out, trickFade .45s .72s ease-in forwards; }
-.trick-completing .ts-top    .card { animation: fromTop    .2s ease-out, trickFade .45s .72s ease-in forwards; }
-.trick-completing .ts-left   .card { animation: fromLeft   .2s ease-out, trickFade .45s .72s ease-in forwards; }
-.trick-completing .ts-right  .card { animation: fromRight  .2s ease-out, trickFade .45s .72s ease-in forwards; }
+/* Trick complete: slide-in then fade to winner */
+.trick-completing .ts-bottom .card { animation: fromBottom .18s ease-out, trickFade .4s .75s ease-in forwards; }
+.trick-completing .ts-top    .card { animation: fromTop    .18s ease-out, trickFade .4s .75s ease-in forwards; }
+.trick-completing .ts-left   .card { animation: fromLeft   .18s ease-out, trickFade .4s .75s ease-in forwards; }
+.trick-completing .ts-right  .card { animation: fromRight  .18s ease-out, trickFade .4s .75s ease-in forwards; }
 
-/* Winner card: green glow + pop */
+/* Winner card: green glow + spring pop */
 .ts-winner .card {
-  animation: winnerPop .35s ease-out !important;
+  animation: winnerPop .42s cubic-bezier(.2,.8,.3,1.1) !important;
   outline: 2.5px solid #69f0ae;
   outline-offset: 3px;
-  filter: drop-shadow(0 0 10px rgba(105,240,174,.85));
+  filter: drop-shadow(0 0 14px rgba(105,240,174,.9));
 }
 
 /* Last trick cards in right panel fade in */
-.grp-trick-grid .card { animation: lastTrickIn .3s ease-out; }
+.grp-trick-grid .card { animation: lastTrickIn .28s ease-out; }
 
 /* ─── Trick center ───────────────────────────────────────────────────────── */
 .trick-center {
@@ -655,7 +679,8 @@ input  { font: inherit; }
   overflow: hidden;
   box-shadow: var(--shadow);
   flex-shrink: 0;
-  transition: transform .15s, box-shadow .15s, opacity .15s;
+  position: relative;
+  transition: transform .13s cubic-bezier(.2,.8,.3,1.25), box-shadow .13s ease, opacity .15s, filter .15s;
 }
 .card.small { width: 72px; height: 104px; }
 .card.tiny  { width: 44px; height: 62px; }
@@ -668,10 +693,22 @@ input  { font: inherit; }
   pointer-events: none;
 }
 
-.card.clickable   { cursor: pointer; }
-.card.clickable:hover:not(.unplayable) { transform: translateY(-12px); box-shadow: 0 12px 24px rgba(0,0,0,.6); }
-.card.selected    { transform: translateY(-22px) !important; box-shadow: 0 14px 30px rgba(0,0,0,.7) !important; outline: 3px solid var(--accent); outline-offset: 1px; }
-.card.unplayable  { opacity: .3; filter: grayscale(.5) brightness(.85); cursor: not-allowed; }
+.card.clickable { cursor: pointer; }
+
+/* Hover: spring lift + golden ambient glow */
+.card.clickable:hover:not(.unplayable) {
+  transform: translateY(-18px) scale(1.04);
+  box-shadow: 0 22px 44px rgba(0,0,0,.75), 0 0 22px rgba(249,168,37,.25);
+  z-index: 5;
+}
+
+.card.selected    { transform: translateY(-24px) !important; box-shadow: 0 16px 34px rgba(0,0,0,.75) !important; outline: 3px solid var(--accent); outline-offset: 1px; }
+.card.unplayable  { opacity: .28; filter: grayscale(.6) brightness(.8); cursor: not-allowed; }
+
+/* Playable cards get a subtle warm glow when it's my turn */
+.hand-my-turn .card:not(.unplayable) {
+  box-shadow: var(--shadow), 0 0 14px rgba(249,168,37,.22);
+}
 
 /* Suit gap in hand */
 .suit-gap { width: 16px; flex-shrink: 0; }
@@ -721,9 +758,37 @@ input  { font: inherit; }
   background: rgba(0,0,0,.35);
   border-bottom: 1px solid var(--ui-border);
   min-height: 40px;
+  transition: background .3s, border-color .3s;
 }
-.my-turn-badge  { color: var(--accent); font-weight: 700; font-size: 14px; }
+.play-bar.play-bar-my-turn {
+  background: rgba(249,168,37,.07);
+  border-bottom-color: rgba(249,168,37,.3);
+}
+
+@keyframes myTurnGlow {
+  0%,100% { text-shadow: 0 0 6px rgba(249,168,37,.3); }
+  50%      { text-shadow: 0 0 18px rgba(249,168,37,.85), 0 0 36px rgba(249,168,37,.25); }
+}
+.my-turn-badge  { color: var(--accent); font-weight: 700; font-size: 14px; animation: myTurnGlow 1.5s ease-in-out infinite; }
 .wait-badge     { color: var(--text-dim); font-size: 13px; }
+
+/* Coinche indicator visible all round */
+.coinche-live-badge {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(230,81,0,.22);
+  border: 1px solid rgba(230,81,0,.55);
+  color: #ffcc80;
+  white-space: nowrap;
+  animation: coincheBadgePulse 2s ease-in-out infinite;
+}
+@keyframes coincheBadgePulse {
+  0%,100% { box-shadow: 0 0 4px rgba(230,81,0,.3); }
+  50%      { box-shadow: 0 0 12px rgba(230,81,0,.65); }
+}
 
 /* ─── Bidding panel ──────────────────────────────────────────────────────── */
 .bidding-panel {
@@ -1035,6 +1100,53 @@ input  { font: inherit; }
   text-align: center;
 }
 
+/* ─── Emoji reactions ────────────────────────────────────────────────────── */
+@keyframes emojiPop {
+  0%   { transform: scale(0) translateY(0);   opacity: 0; }
+  40%  { transform: scale(1.3) translateY(-4px); opacity: 1; }
+  70%  { transform: scale(.95) translateY(0); opacity: 1; }
+  100% { transform: scale(1) translateY(0);   opacity: 1; }
+}
+@keyframes emojiFloat {
+  0%   { transform: translateY(0);  opacity: 1; }
+  80%  { transform: translateY(-6px); opacity: 1; }
+  100% { transform: translateY(-6px); opacity: 0; }
+}
+
+.player-emoji {
+  font-size: 20px;
+  line-height: 1;
+  animation: emojiPop .32s cubic-bezier(.2,.8,.3,1.2) forwards;
+  display: inline-block;
+}
+
+.emoji-tray {
+  display: flex;
+  gap: 3px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.emoji-tray::-webkit-scrollbar { display: none; }
+
+.emoji-btn {
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  padding: 3px 5px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .1s, background .1s;
+  flex-shrink: 0;
+}
+.emoji-btn:hover {
+  background: rgba(255,255,255,.18);
+  transform: scale(1.2);
+}
+.emoji-btn:active { transform: scale(.9); }
+
 /* ─── Belote flash badge ─────────────────────────────────────────────────── */
 .belote-flash {
   font-size: 11px;
@@ -1052,16 +1164,89 @@ input  { font: inherit; }
 }
 
 /* ─── Media corner (voice + video stacked) ──────────────────────────────── */
-.media-corner {
-  position: fixed;
-  bottom: 16px;
-  left: 16px;
+/* ─── Media + Chat row (above hand) ─────────────────────────────────────── */
+.media-chat-row {
   display: flex;
-  flex-direction: column-reverse; /* voice at bottom, video above */
-  align-items: flex-start;
-  gap: 8px;
-  z-index: 200; /* stays below round-modal-overlay (600) */
+  gap: 10px;
+  padding: 6px 10px;
+  background: rgba(0,0,0,.28);
+  border-top: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
 }
+
+.media-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  max-width: 190px;
+  overflow-y: auto;
+  max-height: 140px;
+}
+
+/* ─── Chat panel ─────────────────────────────────────────────────────────── */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  max-height: 100px;
+  padding: 2px 0;
+}
+
+.chat-empty { font-size: 11px; color: var(--text-dim); font-style: italic; }
+
+.chat-msg {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  line-height: 1.4;
+}
+.chat-name {
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.chat-mine .chat-name { color: var(--accent); }
+.chat-text { color: var(--text); word-break: break-word; }
+
+.chat-input-row {
+  display: flex;
+  gap: 5px;
+}
+.chat-input-row input {
+  flex: 1;
+  background: rgba(255,255,255,.07);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.chat-input-row input:focus { border-color: var(--accent); }
+.chat-input-row button {
+  background: rgba(255,255,255,.1);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+.chat-input-row button:hover { background: rgba(255,255,255,.18); }
 
 /* ─── Video panel ────────────────────────────────────────────────────────── */
 .video-panel {
@@ -1275,6 +1460,12 @@ input  { font: inherit; }
   color: #90caf9;
 }
 .btn-bot-normal:hover { background: rgba(21,101,192,.35); }
+.btn-bot-rl {
+  background: rgba(106,27,154,.18);
+  border-color: #9c27b0;
+  color: #ce93d8;
+}
+.btn-bot-rl:hover { background: rgba(106,27,154,.35); }
 
 /* Bot level badge next to name */
 .bot-level-badge {
@@ -1295,6 +1486,11 @@ input  { font: inherit; }
   background: rgba(21,101,192,.25);
   border: 1px solid #1976d2;
   color: #90caf9;
+}
+.blb-rl {
+  background: rgba(106,27,154,.25);
+  border: 1px solid #9c27b0;
+  color: #ce93d8;
 }
 
 /* ─── Running belote indicator ───────────────────────────────────────────── */
@@ -1318,7 +1514,23 @@ input  { font: inherit; }
   padding: 10px 14px;
 }
 .pr-info { display: flex; flex-direction: column; gap: 2px; }
-.pr-code { font-weight: 800; font-size: 16px; letter-spacing: 2px; color: var(--accent); }
+.pr-code { font-weight: 700; font-size: 14px; color: var(--accent); }
+
+/* ─── Player stats bar ───────────────────────────────────────────────────── */
+.my-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  flex-wrap: wrap;
+}
+.my-stats-bar span { white-space: nowrap; }
+.stats-sep { opacity: .4; }
 .pr-detail { font-size: 11px; color: var(--text-dim); }
 
 /* ─── Card skins — all image-based, figures always visible ───────────────── */

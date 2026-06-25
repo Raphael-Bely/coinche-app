@@ -39,6 +39,54 @@ function cheapestWinner(candidates, target, trump) {
   return winners.reduce((min, c) => strength(c, trump) < strength(min, trump) ? c : min);
 }
 
+// Suits where we hold exactly 2 non-trump cards and one of them is a 10.
+// Dumping from these suits costs us the 10 on the next lead — protect them.
+function protectedSuits(hand, trump) {
+  const bySuit = {};
+  for (const c of hand) {
+    if (isTrump(c, trump)) continue;
+    (bySuit[c.suit] = bySuit[c.suit] || []).push(c);
+  }
+  const result = new Set();
+  for (const [suit, cards] of Object.entries(bySuit))
+    if (cards.length === 2 && cards.some(c => c.rank === '10')) result.add(suit);
+  return result;
+}
+
+// Partner played the Jack of trump: nothing in the deck can beat it.
+function partnerPlayedJack(trick, partner, trump) {
+  if (!trump || trump === 'SA' || trump === 'TA') return false;
+  const pp = trick.find(t => t.playerIdx === partner);
+  return pp?.card.suit === trump && pp?.card.rank === 'J';
+}
+
+// Choose the safest card to sacrifice from `playable`.
+// Priority (least damaging first):
+//   1. non-trump, non-A, non-10, not from a protected suit
+//   2. non-trump, non-A, non-10  (protected suit: must dump something)
+//   3. small trump (not J/9/A/10 of trump) — better than an Ace or plain 10
+//   4. non-trump, non-A          (forced to dump a plain 10)
+//   5. cheapest available        (last resort — may be an Ace)
+function safeDump(playable, hand, trump) {
+  const nonTr = playable.filter(c => !isTrump(c, trump));
+  const prot  = protectedSuits(hand, trump);
+
+  const s1 = nonTr.filter(c => c.rank !== 'A' && c.rank !== '10' && !prot.has(c.suit));
+  if (s1.length) return cheapest(s1, trump);
+
+  const s2 = nonTr.filter(c => c.rank !== 'A' && c.rank !== '10');
+  if (s2.length) return cheapest(s2, trump);
+
+  const smallTr = playable.filter(c =>
+    isTrump(c, trump) && c.rank !== 'J' && c.rank !== '9' && c.rank !== 'A' && c.rank !== '10');
+  if (smallTr.length) return cheapest(smallTr, trump);
+
+  const s3 = nonTr.filter(c => c.rank !== 'A');
+  if (s3.length) return cheapest(s3, trump);
+
+  return cheapest(playable, trump);
+}
+
 // ─── Bidding ──────────────────────────────────────────────────────────────────
 
 function evalHand(hand, suit) {
@@ -135,7 +183,7 @@ function partnerPreferredSuit(room, pi, trump) {
 }
 
 function bestLead(room, pi, playable, trump) {
-  // ── Trump pulling: lead J then 9 while opponents still have trumps ──
+  // ── Trump pulling: J → 9 → continue if team is winning ──
   if (trump && trump !== 'SA' && trump !== 'TA') {
     const myTrumps = playable.filter(c => c.suit === trump);
     if (myTrumps.length && opponentsHaveTrump(room, pi, trump)) {
@@ -143,8 +191,9 @@ function bestLead(room, pi, playable, trump) {
       if (J) return J;
       const nine = myTrumps.find(c => c.rank === '9');
       if (nine) return nine;
-      // Continue pulling with strongest remaining trump if we're master
-      if (isHighestRemaining(room, strongest(myTrumps, trump), trump))
+      // Continue pulling if master, or partner won a recent trick (team dominant)
+      const partnerWonRecently = room.tricks.slice(-3, -1).some(t => t.winner === partner);
+      if (isHighestRemaining(room, strongest(myTrumps, trump), trump) || partnerWonRecently)
         return strongest(myTrumps, trump);
     }
   }
@@ -203,31 +252,26 @@ function normalPlay(room, pi) {
   const isLast      = trick.length === 3;
 
   if (partnerWins) {
-    if (isLast) {
-      // Last to play, partner wins — maximise points for our team
+    // Secure win: last to play, or partner played the Jack of trump (unbeatable)
+    const secure = isLast || partnerPlayedJack(trick, partner, trump);
+    if (secure) {
+      // Give our highest-value card — every point counts for the team
       const nonTrump = playable.filter(c => !isTrump(c, trump));
-      const best = (nonTrump.length ? nonTrump : playable)
-        .reduce((max, c) => pointValue(c, trump) > pointValue(max, trump) ? c : max);
+      const pool = nonTrump.length ? nonTrump : playable;
+      const best = pool.reduce((max, c) => pointValue(c, trump) > pointValue(max, trump) ? c : max);
       return room.playCard(sid, best.id);
     }
-    // Not last — dump cheapest non-ace/10, preserve high cards for future leads
-    const nonTrump = playable.filter(c => !isTrump(c, trump));
-    const safe = nonTrump.filter(c => c.rank !== 'A' && c.rank !== '10');
-    const dump = safe.length    ? cheapest(safe, trump)
-               : nonTrump.length ? cheapest(nonTrump, trump)
-               : cheapest(playable, trump);
-    return room.playCard(sid, dump.id);
+    // Opponent still to play — dump safely: protect Aces, 10s and vulnerable suits
+    return room.playCard(sid, safeDump(playable, room.hands[pi], trump).id);
   }
 
   // Opponent winning — try to beat
   const winCard = trick.find(t => t.playerIdx === winnerIdx).card;
   const over = cheapestWinner(playable, winCard, trump);
-
-  // Finesse if playing last: just need the cheapest winner
   if (over) return room.playCard(sid, over.id);
 
-  // Can't beat — dump cheapest (avoid giving opponents valuable points)
-  return room.playCard(sid, cheapest(playable, trump).id);
+  // Can't beat — dump safely (protect Aces, 10s and protected suits)
+  return room.playCard(sid, safeDump(playable, room.hands[pi], trump).id);
 }
 
 // ─── Classic bidding heuristic ───────────────────────────────────────────────

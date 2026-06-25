@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import socket from '../socket';
 import Card from './Card';
 import VoiceChat from './VoiceChat';
@@ -6,6 +6,7 @@ import VideoPanel from './VideoPanel';
 
 const BID_STEPS    = [80, 90, 100, 110, 120, 130, 140, 150, 160, 'Capot', 'Capot Beloté', 'Générale', 'Générale Beloté'];
 const SUIT_BUTTONS = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
+const EMOJIS = ['👍','❤️','😂','😮','😠','🔥','💪','🎉'];
 
 function bidOrd(v) {
   if (v === 'Capot')           return 250;
@@ -63,6 +64,8 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
   const [bidSuit,      setBidSuit]      = useState(null);
   const [selAnn,       setSelAnn]       = useState(null);
   const [beloteFlash,  setBeloteFlash]  = useState({}); // { [playerIdx]: 'belote'|'rebelote' }
+  const [playerEmojis, setPlayerEmojis] = useState({}); // { [playerIdx]: { emoji, seq } }
+  const emojiSeq = useRef(0);
 
   useEffect(() => {
     if (gs.state === 'announce' && selAnn === null)
@@ -89,7 +92,28 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
       const tid = setTimeout(() => socket.emit('play_card', { cardId: gs.hand[0].id }), 350);
       return () => clearTimeout(tid);
     }
-  }, [gs.state, gs.currentPlayerIdx, pi, gs.hand.length]); // eslint-disable-line
+  }, [gs.state, gs.currentPlayerIdx, pi, gs.hand.length, gs.playableIds.length]);
+
+  // Preload all 32 card images so the first render is instant (no image lag)
+  useEffect(() => {
+    const SUITS = ['S','H','D','C'];
+    const RANKS = ['7','8','9','0','J','Q','K','A'];
+    SUITS.forEach(s => RANKS.forEach(r => { const img = new window.Image(); img.src = `/cards/${r}${s}.png`; }));
+  }, []);
+
+  // Emoji reactions
+  useEffect(() => {
+    function handler({ playerIdx, emoji }) {
+      const seq = ++emojiSeq.current;
+      setPlayerEmojis(prev => ({ ...prev, [playerIdx]: { emoji, seq } }));
+      setTimeout(() => setPlayerEmojis(prev => {
+        if (prev[playerIdx]?.seq !== seq) return prev;
+        const copy = { ...prev }; delete copy[playerIdx]; return copy;
+      }), 3500);
+    }
+    socket.on('emoji_show', handler);
+    return () => socket.off('emoji_show', handler);
+  }, []);
 
   const teamName = (t) => gs.teams[t].map(i => gs.players[i]?.name || '?').join(' & ');
 
@@ -113,9 +137,12 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
     setBidValue(null); setBidSuit(null);
   }
 
-  const isGameActive = gs.state !== 'waiting';
-  const trump        = gs.currentBid?.suit;
-  const sortedHand   = sortHand(gs.hand, trump);
+  const isGameActive  = gs.state !== 'waiting';
+  const trump         = gs.currentBid?.suit;
+  const sortedHand    = sortHand(gs.hand, trump);
+  const isMyPlayTurn  = gs.state === 'playing' && gs.currentPlayerIdx === pi;
+  const coincheBy     = gs.coinched    ? gs.bids?.find(b => b.type === 'coinche')?.playerIdx    : null;
+  const surcoincheBy  = gs.surcoinched ? gs.bids?.find(b => b.type === 'surcoinche')?.playerIdx : null;
 
   return (
     <div className="game-board">
@@ -173,6 +200,9 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                         {isDealer && <div className="dealer-token" title="Donneur">D</div>}
                         <span className="ps-cardinal">{card}</span>
                         <span className="ps-name">{p.name}</span>
+                        {playerEmojis[absIdx] && (
+                          <span key={`e-${absIdx}-${playerEmojis[absIdx].seq}`} className="player-emoji">{playerEmojis[absIdx].emoji}</span>
+                        )}
                         {gs.state === 'bidding' && gs.biddingIdx === absIdx && <span className="thinking">…</span>}
                         {beloteFlash[absIdx] && (
                           <span className="belote-flash">{beloteFlash[absIdx] === 'rebelote' ? 'Rebelote !' : 'Belote !'}</span>
@@ -284,13 +314,19 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
             )}
 
             {gs.state === 'playing' && (
-              <div className="play-bar">
-                {gs.currentPlayerIdx === pi
+              <div className={`play-bar${isMyPlayTurn ? ' play-bar-my-turn' : ''}`}>
+                {isMyPlayTurn
                   ? <span className="my-turn-badge">⬆ À toi de jouer — clique une carte</span>
                   : <span className="wait-badge">
                       ⏳ <strong>{gs.players[gs.currentPlayerIdx]?.name}</strong> joue…
                     </span>
                 }
+                {(gs.coinched || gs.surcoinched) && (
+                  <span className="coinche-live-badge">
+                    {gs.surcoinched ? '⚡⚡' : '⚡'}&nbsp;
+                    {gs.players[surcoincheBy ?? coincheBy]?.name} a {gs.surcoinched ? 'surcoinché ×4' : 'coinché ×2'}
+                  </span>
+                )}
               </div>
             )}
 
@@ -300,6 +336,15 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
               </div>
             )}
 
+            {/* ── Media + Chat ────────────────────────────────────── */}
+            <div className="media-chat-row">
+              <div className="media-stack">
+                <VoiceChat myInfo={myInfo} />
+                <VideoPanel myInfo={myInfo} />
+              </div>
+              <ChatPanel pi={pi} />
+            </div>
+
             {/* My hand */}
             {(gs.state === 'playing' || gs.state === 'bidding' || gs.state === 'announce') && (
               <div className="my-area">
@@ -307,6 +352,9 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                   {gs.dealerIdx === pi && <div className="dealer-token my" title="Donneur">D</div>}
                   <span className="ps-cardinal my-cardinal">S</span>
                   <span className="my-ps-name">{gs.players[pi]?.name} (moi)</span>
+                  {playerEmojis[pi] && (
+                    <span key={`e-${pi}-${playerEmojis[pi].seq}`} className="player-emoji">{playerEmojis[pi].emoji}</span>
+                  )}
                   {gs.state === 'bidding' && gs.biddingIdx === pi && <span className="thinking"> …</span>}
                   {beloteFlash[pi] && (
                     <span className="belote-flash">{beloteFlash[pi] === 'rebelote' ? 'Rebelote !' : 'Belote !'}</span>
@@ -352,10 +400,15 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                   )}
                 </div>
 
-                <div className="hand-cards">
+                <div className="emoji-tray">
+                  {EMOJIS.map(e => (
+                    <button key={e} className="emoji-btn" onClick={() => socket.emit('emoji_react', { emoji: e })}>{e}</button>
+                  ))}
+                </div>
+
+                <div className={`hand-cards${isMyPlayTurn ? ' hand-my-turn' : ''}`}>
                   {sortedHand.map((card, i) => {
-                    const isMyPlayTurn = gs.state === 'playing' && gs.currentPlayerIdx === pi;
-                    const isBlocked    = isMyPlayTurn && !gs.playableIds.includes(card.id);
+                    const isBlocked = isMyPlayTurn && !gs.playableIds.includes(card.id);
                     const showGap      = i > 0 && sortedHand[i-1].suit !== card.suit;
                     return (
                       <React.Fragment key={card.id}>
@@ -374,9 +427,56 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
           </div>{/* .bottom-area */}
         </div>
       )}
-      <div className="media-corner">
-        <VoiceChat myInfo={myInfo} />
-        <VideoPanel myInfo={myInfo} />
+    </div>
+  );
+}
+
+// ── Chat panel ─────────────────────────────────────────────────────────────
+function ChatPanel({ pi }) {
+  const [msgs,  setMsgs]  = useState([]);
+  const [input, setInput] = useState('');
+  const endRef = useRef(null);
+
+  useEffect(() => {
+    function handler(msg) {
+      setMsgs(prev => [...prev.slice(-99), msg]);
+    }
+    socket.on('chat_msg', handler);
+    return () => socket.off('chat_msg', handler);
+  }, []);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [msgs]);
+
+  function send() {
+    const text = input.trim();
+    if (!text) return;
+    socket.emit('chat_msg', { text });
+    setInput('');
+  }
+
+  return (
+    <div className="chat-panel">
+      <div className="chat-messages">
+        {msgs.length === 0 && <span className="chat-empty">Pas encore de message…</span>}
+        {msgs.map((m, i) => (
+          <div key={i} className={`chat-msg ${m.playerIdx === pi ? 'chat-mine' : ''}`}>
+            <span className="chat-name">{m.name}</span>
+            <span className="chat-text">{m.text}</span>
+          </div>
+        ))}
+        <div ref={endRef} />
+      </div>
+      <div className="chat-input-row">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && send()}
+          placeholder="Message…"
+          maxLength={200}
+        />
+        <button onClick={send}>↑</button>
       </div>
     </div>
   );
@@ -479,10 +579,10 @@ function WaitingArea({ gs, pi }) {
               return (
                 <div key={pIdx} className="team-player-row">
                   <span className="tp-name">
-                    {p.isBot ? (p.botLevel === 'classique' ? '⭐ ' : p.botLevel === 'normal' ? '🧠 ' : '🎲 ') : ''}
+                    {p.isBot ? (p.botLevel === 'classique' ? '⭐ ' : p.botLevel === 'normal' ? '🧠 ' : p.botLevel === 'rl' ? '🤖 ' : '🎲 ') : ''}
                     {p.name}
                     {pIdx === pi ? ' (toi)' : ''}
-                    {p.isBot && <span className={`bot-level-badge blb-${p.botLevel}`}>{p.botLevel === 'classique' ? 'classique' : p.botLevel === 'normal' ? 'normal' : 'aléatoire'}</span>}
+                    {p.isBot && <span className={`bot-level-badge blb-${p.botLevel}`}>{p.botLevel === 'classique' ? 'classique' : p.botLevel === 'normal' ? 'normal' : p.botLevel === 'rl' ? 'RL' : 'aléatoire'}</span>}
                   </span>
                   {isHost && (
                     <button className="btn-swap" onClick={() => movePlayer(pIdx, 1 - t)}>
@@ -506,6 +606,9 @@ function WaitingArea({ gs, pi }) {
           </button>
           <button className="btn-bot btn-bot-random" onClick={() => socket.emit('add_bot', { level: 'random' })}>
             🎲 Bot aléatoire
+          </button>
+          <button className="btn-bot btn-bot-rl" onClick={() => socket.emit('add_bot', { level: 'rl' })}>
+            🤖 Bot RL
           </button>
         </div>
       )}

@@ -21,13 +21,25 @@ export default function Lobby() {
     public:         false,
   });
   const [publicRooms, setPublicRooms] = useState([]);
+  const [myStats,    setMyStats]    = useState(null);
+
+  const [myUuid] = useState(() => {
+    let uuid = localStorage.getItem('coincheUUID');
+    if (!uuid) { uuid = crypto.randomUUID(); localStorage.setItem('coincheUUID', uuid); }
+    return uuid;
+  });
 
   const set = (k, v) => setSettings(s => ({ ...s, [k]: v }));
 
   useEffect(() => {
-    socket.on('rooms_list', setPublicRooms);
-    return () => socket.off('rooms_list', setPublicRooms);
-  }, []);
+    socket.emit('my_stats', { uuid: myUuid });
+    socket.on('rooms_list',   setPublicRooms);
+    socket.on('stats_update', setMyStats);
+    return () => {
+      socket.off('rooms_list',   setPublicRooms);
+      socket.off('stats_update', setMyStats);
+    };
+  }, [myUuid]);
 
   function loadPublicRooms() {
     socket.emit('list_rooms');
@@ -42,19 +54,19 @@ export default function Lobby() {
   function doCreate() {
     if (!name.trim()) return;
     localStorage.setItem('coincheName', name.trim());
-    socket.emit('create_room', { name: name.trim(), settings });
+    socket.emit('create_room', { name: name.trim(), settings, uuid: myUuid });
   }
 
   function doJoin() {
     if (!name.trim() || !code.trim()) return;
     localStorage.setItem('coincheName', name.trim());
-    socket.emit('join_room', { name: name.trim(), code: code.trim().toUpperCase() });
+    socket.emit('join_room', { name: name.trim(), code: code.trim().toUpperCase(), uuid: myUuid });
   }
 
   function joinPublic(roomCode) {
     if (!name.trim()) return;
     localStorage.setItem('coincheName', name.trim());
-    socket.emit('join_room', { name: name.trim(), code: roomCode });
+    socket.emit('join_room', { name: name.trim(), code: roomCode, uuid: myUuid });
   }
 
   return (
@@ -85,6 +97,16 @@ export default function Lobby() {
             </button>
           </div>
           {!name.trim() && <p className="hint">Entre ton prénom pour continuer</p>}
+
+          {myStats && (myStats.roundsPlayed > 0 || myStats.gamesPlayed > 0) && (
+            <div className="my-stats-bar">
+              <span title="Manches gagnées / jouées">🏆 {myStats.roundsWon}/{myStats.roundsPlayed} manches</span>
+              <span className="stats-sep">·</span>
+              <span title="Parties gagnées / jouées">🎮 {myStats.gamesWon}/{myStats.gamesPlayed} parties</span>
+              <span className="stats-sep">·</span>
+              <span title="Points marqués">{myStats.pointsScored.toLocaleString()} pts</span>
+            </div>
+          )}
 
           <div className="skin-picker">
             <div className="skin-picker-lbl">Apparence des cartes</div>
@@ -226,7 +248,7 @@ export default function Lobby() {
               {publicRooms.map(r => (
                 <div key={r.code} className="public-room-row">
                   <div className="pr-info">
-                    <span className="pr-code">{r.code}</span>
+                    <span className="pr-code">{r.hostName}</span>
                     <span className="pr-detail">{r.players}/4 joueurs · {r.maxPoints} pts</span>
                   </div>
                   <button className="btn-primary" disabled={!name.trim()}

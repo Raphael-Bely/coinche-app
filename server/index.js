@@ -7,6 +7,8 @@ const path        = require('path');
 const fs          = require('fs');
 const { GameRoom } = require('./game/GameRoom');
 const { normalPlay, chooseBid, chooseBidClassique } = require('./game/BotNormal');
+const { rlPlay } = require('./game/BotRL');
+const stats = require('./stats');
 
 const app  = express();
 app.use(cors({ origin: '*' }));
@@ -17,6 +19,7 @@ const io   = new Server(http, { cors: { origin: '*' } });
 
 const rooms      = new Map(); // code → GameRoom
 const playerRoom = new Map(); // socketId → code
+const playerUuid = new Map(); // socketId → uuid
 const voiceRooms = new Map();
 const videoRooms = new Map();
 
@@ -63,6 +66,7 @@ function notify(room, msg) {
 const BOT_NAMES_RANDOM    = ['Bot-Renard', 'Bot-Aigle', 'Bot-Loup'];
 const BOT_NAMES_NORMAL    = ['Bot-Expert', 'Bot-Malin', 'Bot-Sage'];
 const BOT_NAMES_CLASSIQUE = ['Bot-As', 'Bot-Roi', 'Bot-Dame'];
+const BOT_NAMES_RL        = ['Bot-Alpha', 'Bot-Neural', 'Bot-Omega'];
 const BOT_SUITS  = ['♠', '♥', '♦', '♣', 'SA', 'TA'];
 const BOT_STEPS  = [80, 90, 100, 110, 120, 130, 140, 150, 160, 'Capot'];
 
@@ -73,6 +77,33 @@ function botLevel(room, pi) {
 function broadcastAndBotAct(room) {
   broadcast(room);
   scheduleBotActions(room);
+}
+
+function recordRoundStats(room) {
+  const rr = room.roundResult;
+  if (!rr) return;
+  const winTeam  = rr.chute ? 1 - rr.contractTeam : rr.contractTeam;
+  const gameOver = room.state === 'game_over';
+  for (const p of room.players) {
+    if (p.isBot) continue;
+    const uuid = playerUuid.get(p.socketId);
+    if (!uuid) continue;
+    const pTeam    = room.teamOf(p.idx);
+    const roundPts = pTeam === 0 ? rr.team0Score : rr.team1Score;
+    stats.recordRound(uuid, p.name, pTeam === winTeam, roundPts);
+    if (gameOver) {
+      const gameWon = room.totalScores[pTeam] > room.totalScores[1 - pTeam];
+      stats.recordGame(uuid, p.name, gameWon);
+    }
+    io.to(p.socketId).emit('stats_update', stats.getStats(uuid));
+  }
+}
+
+function doAdvanceTrick(room) {
+  const r2 = room.advanceTrick();
+  if (r2?.error) return;
+  if (room.state === 'round_over' || room.state === 'game_over') recordRoundStats(room);
+  broadcastAndBotAct(room);
 }
 
 function scheduleBotActions(room) {
@@ -106,9 +137,9 @@ function scheduleBotActions(room) {
 
   } else if (state === 'playing' && botIdxs.has(currentPlayerIdx) && !room.pendingTrickState) {
     const snap = currentPlayerIdx;
-    setTimeout(() => {
+    setTimeout(async () => {
       if (room.state !== 'playing' || room.currentPlayerIdx !== snap || room.pendingTrickState) return;
-      const r = botDoPlay(room, snap);
+      const r = await botDoPlay(room, snap);
       if (r?.beloteMsg) {
         notify(room, r.beloteMsg);
         io.to(room.code).emit('belote_flash', {
@@ -119,9 +150,7 @@ function scheduleBotActions(room) {
       broadcast(room); // show the card immediately
       if (r?.trickDisplayed) {
         setTimeout(() => {
-          const r2 = room.advanceTrick();
-          if (r2?.error) return;
-          broadcastAndBotAct(room);
+          doAdvanceTrick(room);
         }, 1300);
       } else {
         scheduleBotActions(room);
@@ -191,6 +220,7 @@ function botDoBidNormal(room, pi) {
 
 function botDoPlay(room, pi) {
   const lv = botLevel(room, pi);
+  if (lv === 'rl')                           return rlPlay(room, pi);  // async
   if (lv === 'classique' || lv === 'normal') return normalPlay(room, pi);
   return botDoPlayRandom(room, pi);
 }
@@ -207,7 +237,8 @@ function botDoPlayRandom(room, pi) {
 
 io.on('connection', socket => {
   // ── Create room ──────────────────────────────────────────────────────
-  socket.on('create_room', ({ name, settings }) => {
+  socket.on('create_room', ({ name, settings, uuid }) => {
+    if (uuid) playerUuid.set(socket.id, uuid);
     const code = genCode();
     const room = new GameRoom(code, settings || {});
     rooms.set(code, room);
@@ -222,7 +253,8 @@ io.on('connection', socket => {
   });
 
   // ── Join room ────────────────────────────────────────────────────────
-  socket.on('join_room', ({ name, code }) => {
+  socket.on('join_room', ({ name, code, uuid }) => {
+    if (uuid) playerUuid.set(socket.id, uuid);
     const c    = (code || '').toUpperCase().trim();
     const room = rooms.get(c);
     if (!room) return socket.emit('err', 'Salle introuvable');
@@ -256,9 +288,10 @@ io.on('connection', socket => {
     const list = [...rooms.values()]
       .filter(r => r.settings.public && r.state === 'waiting' && r.players.length < 4)
       .map(r => ({
-        code:      r.code,
-        players:   r.players.length,
-        maxPoints: r.settings.maxPoints,
+        code:        r.code,
+        hostName:    r.players[0]?.name ?? r.code,
+        players:     r.players.length,
+        maxPoints:   r.settings.maxPoints,
         scoringMode: r.settings.scoringMode,
       }));
     socket.emit('rooms_list', list);
@@ -268,9 +301,9 @@ io.on('connection', socket => {
   socket.on('add_bot', ({ level } = {}) => {
     const room = rooms.get(playerRoom.get(socket.id));
     if (!room) return;
-    const lv    = level === 'classique' ? 'classique' : level === 'normal' ? 'normal' : 'random';
+    const lv    = level === 'classique' ? 'classique' : level === 'normal' ? 'normal' : level === 'rl' ? 'rl' : 'random';
     const idx   = room.botIdxs.size;
-    const names = lv === 'classique' ? BOT_NAMES_CLASSIQUE : lv === 'normal' ? BOT_NAMES_NORMAL : BOT_NAMES_RANDOM;
+    const names = lv === 'classique' ? BOT_NAMES_CLASSIQUE : lv === 'normal' ? BOT_NAMES_NORMAL : lv === 'rl' ? BOT_NAMES_RL : BOT_NAMES_RANDOM;
     const name  = names[idx % names.length];
     const r     = room.addBot(name, lv);
     if (r.error) return socket.emit('err', { msg: r.error });
@@ -362,6 +395,41 @@ io.on('connection', socket => {
     const r = room.nextRound();
     if (r.error) return socket.emit('err', r.error);
     broadcastAndBotAct(room);
+  });
+
+  // ── Chat ─────────────────────────────────────────────────────────────
+  socket.on('emoji_react', ({ emoji } = {}) => {
+    const code = playerRoom.get(socket.id);
+    const room = rooms.get(code);
+    if (!room) return;
+    const pi = room._pidx(socket.id);
+    if (pi < 0) return;
+    const ALLOWED = new Set(['👍','❤️','😂','😮','😠','🔥','💪','🎉','😭','🤦']);
+    if (!ALLOWED.has(String(emoji))) return;
+    io.to(code).emit('emoji_show', { playerIdx: pi, emoji });
+  });
+
+  socket.on('chat_msg', ({ text }) => {
+    const code = playerRoom.get(socket.id);
+    const room = rooms.get(code);
+    if (!room) return;
+    const pi = room._pidx(socket.id);
+    const player = room.players[pi];
+    if (!player || !text) return;
+    io.to(code).emit('chat_msg', {
+      playerIdx: pi,
+      name:      player.name,
+      text:      String(text).trim().slice(0, 200),
+    });
+  });
+
+  // ── Stats ────────────────────────────────────────────────────────────
+  socket.on('my_stats', ({ uuid } = {}) => {
+    if (!uuid) return;
+    playerUuid.set(socket.id, uuid);
+    socket.emit('stats_update', stats.getStats(uuid) ?? {
+      name: '', gamesPlayed: 0, gamesWon: 0, roundsPlayed: 0, roundsWon: 0, pointsScored: 0,
+    });
   });
 
   // ── Voice + Video chat ───────────────────────────────────────────────
