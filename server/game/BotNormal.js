@@ -219,13 +219,20 @@ function bestLead(room, pi, playable, trump) {
     if (pref.length) return strongest(pref, trump);
   }
 
-  // ── Short suit (singleton/doubleton) to set up future ruff ──
-  const nonTrump = playable.filter(c => !isTrump(c, trump));
-  if (nonTrump.length) {
-    const bySuit = {};
-    for (const c of nonTrump) { (bySuit[c.suit] = bySuit[c.suit] || []).push(c); }
-    const short = Object.values(bySuit).reduce((a, b) => a.length <= b.length ? a : b);
-    if (short.length <= 2) return short[0];
+  // ── Short suit: lead singleton/cheap doubleton to void and ruff later ──
+  if (trump && trump !== 'SA' && trump !== 'TA') {
+    const nonTr = playable.filter(c => !isTrump(c, trump));
+    if (nonTr.length) {
+      const bySuit = {};
+      for (const c of nonTr) (bySuit[c.suit] = bySuit[c.suit] || []).push(c);
+      const suits = Object.values(bySuit).sort((a, b) => a.length - b.length);
+      for (const s of suits) {
+        if (s.length > 2) break;
+        if (s.length === 1) return s[0];
+        if (!s.some(c => c.rank === 'A' || c.rank === '10'))
+          return cheapest(s, trump);
+      }
+    }
   }
 
   return strongest(playable, trump);

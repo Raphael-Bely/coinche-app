@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import socket from '../socket';
 import Card from './Card';
+import Badge from './Badge';
 import VoiceChat from './VoiceChat';
 import VideoPanel from './VideoPanel';
 
@@ -199,6 +200,7 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                       <div className={`ps-spot ${isPartner ? 'ps-partner' : 'ps-opponent'} ${isActive ? 'ps-active' : ''}`}>
                         {isDealer && <div className="dealer-token" title="Donneur">D</div>}
                         <span className="ps-cardinal">{card}</span>
+                        {p.badge != null && <Badge tier={p.badge} size="sm" />}
                         <span className="ps-name">{p.name}</span>
                         {playerEmojis[absIdx] && (
                           <span key={`e-${absIdx}-${playerEmojis[absIdx].seq}`} className="player-emoji">{playerEmojis[absIdx].emoji}</span>
@@ -351,6 +353,7 @@ export default function GameBoard({ gs, myInfo, onLeave }) {
                 <div className="my-name-bar">
                   {gs.dealerIdx === pi && <div className="dealer-token my" title="Donneur">D</div>}
                   <span className="ps-cardinal my-cardinal">S</span>
+                  {gs.players[pi]?.badge != null && <Badge tier={gs.players[pi].badge} size="sm" />}
                   <span className="my-ps-name">{gs.players[pi]?.name} (moi)</span>
                   {playerEmojis[pi] && (
                     <span key={`e-${pi}-${playerEmojis[pi].seq}`} className="player-emoji">{playerEmojis[pi].emoji}</span>
@@ -749,7 +752,7 @@ function RoundModal({ gs, myTeam, teamName }) {
   const winTeam = r.chute ? 1 - r.contractTeam : r.contractTeam;
 
   return (
-    <div className="round-modal">
+    <div className={`round-modal${gs.state === 'game_over' ? ' game-over-modal' : ''}`}>
       <div className={`round-result-badge ${r.chute ? 'chute' : 'ok'}`}>
         {r.chute ? '💥 Chute !' : '✅ Contrat réussi !'}
       </div>
@@ -791,9 +794,65 @@ function RoundModal({ gs, myTeam, teamName }) {
         <div className="game-over-banner">
           <div className="go-trophy">🏆</div>
           <h2>{teamName(winTeam)} remporte la partie !</h2>
-          <p>Score final : {r.totalAfter[0]} — {r.totalAfter[1]}</p>
-          <button className="btn-primary" style={{ marginTop: 12 }} onClick={() => socket.emit('restart_game')}>
-            Rejouer
+
+          {gs.roundHistory?.length > 0 && (
+            <div className="game-summary">
+              <div className="gs-title">Résumé · {gs.roundHistory.length} manche{gs.roundHistory.length > 1 ? 's' : ''}</div>
+
+              <div className="gs-row gs-header">
+                <span>#</span>
+                <span>Contrat</span>
+                <span></span>
+                <span>NOUS</span>
+                <span>EUX</span>
+              </div>
+
+              {gs.roundHistory.map((rh, i) => {
+                const bidder  = gs.players[rh.contractPlayerIdx];
+                const hasAnn  = (rh.announcePts?.[0] ?? 0) > 0 || (rh.announcePts?.[1] ?? 0) > 0;
+                const nousScore = rh[`team${myTeam}Score`];
+                const euxScore  = rh[`team${1 - myTeam}Score`];
+                return (
+                  <React.Fragment key={i}>
+                    <div className={`gs-row${rh.chute ? ' gs-chute' : ' gs-ok'}`}>
+                      <span className="gs-num">{i + 1}</span>
+                      <span className="gs-contract">
+                        {bidder && <strong>{bidder.name}</strong>}
+                        {bidder && ' · '}
+                        {rh.contractValue} {suitLabel(rh.contractSuit)}
+                        {rh.surcoinched ? ' ⚡⚡×4' : rh.coinched ? ' ⚡×2' : ''}
+                      </span>
+                      <span className="gs-icon">{rh.chute ? '💥' : '✅'}</span>
+                      <span className="gs-pts gs-nous">{nousScore > 0 ? `+${nousScore}` : '—'}</span>
+                      <span className="gs-pts">{euxScore > 0 ? `+${euxScore}` : '—'}</span>
+                    </div>
+                    {hasAnn && rh.announceWinnerTeam >= 0 && (() => {
+                      const parts = gs.teams[rh.announceWinnerTeam]
+                        .flatMap(pIdx => {
+                          const anns = rh.declaredAnn?.[pIdx];
+                          if (!anns?.length) return [];
+                          return [`${gs.players[pIdx]?.name} : ${anns.map(a => `${a.label} (${a.pts}pts)`).join(', ')}`];
+                        });
+                      return parts.length > 0 ? (
+                        <div className="gs-ann-row">{parts.join(' · ')}</div>
+                      ) : null;
+                    })()}
+                  </React.Fragment>
+                );
+              })}
+
+              <div className="gs-row gs-total">
+                <span></span>
+                <span className="gs-total-label">Score final</span>
+                <span></span>
+                <span className="gs-pts gs-nous gs-total-val">{r.totalAfter[myTeam]}</span>
+                <span className="gs-pts gs-total-val">{r.totalAfter[1 - myTeam]}</span>
+              </div>
+            </div>
+          )}
+
+          <button className="btn-primary go-replay-btn" onClick={() => socket.emit('restart_game')}>
+            🔄 Rejouer
           </button>
         </div>
       )}

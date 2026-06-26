@@ -427,6 +427,7 @@ class GameRoom {
     this.roundResult = {
       ...result,
       contractTeam,
+      contractPlayerIdx: this.currentBid.playerIdx,
       contractValue: this.currentBid.value,
       contractSuit:  this.currentBid.suit,
       coinched:      this.coinched,

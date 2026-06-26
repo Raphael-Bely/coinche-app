@@ -8,7 +8,8 @@ const fs          = require('fs');
 const { GameRoom } = require('./game/GameRoom');
 const { normalPlay, chooseBid, chooseBidClassique } = require('./game/BotNormal');
 const { rlPlay } = require('./game/BotRL');
-const stats = require('./stats');
+const stats    = require('./stats');
+const accounts = require('./accounts');
 
 const app  = express();
 app.use(cors({ origin: '*' }));
@@ -17,9 +18,19 @@ app.use(express.json());
 const http = createServer(app);
 const io   = new Server(http, { cors: { origin: '*' } });
 
-const rooms      = new Map(); // code → GameRoom
-const playerRoom = new Map(); // socketId → code
-const playerUuid = new Map(); // socketId → uuid
+const rooms       = new Map(); // code → GameRoom
+const playerRoom  = new Map(); // socketId → code
+const playerUuid  = new Map(); // socketId → uuid
+const playerBadge = new Map(); // socketId → tier (0-6)
+
+const TIER_PTS = [0, 500, 2000, 5000, 10000, 25000, 50000];
+function getBadgeTier(pts) {
+  let t = 0;
+  for (let i = TIER_PTS.length - 1; i >= 0; i--) {
+    if ((pts || 0) >= TIER_PTS[i]) { t = i; break; }
+  }
+  return t;
+}
 const voiceRooms = new Map();
 const videoRooms = new Map();
 
@@ -54,8 +65,16 @@ function genCode() {
 }
 
 function broadcast(room) {
-  for (const p of room.players)
-    if (!p.isBot) io.to(p.socketId).emit('state', room.publicState(p.idx));
+  for (const p of room.players) {
+    if (p.isBot) continue;
+    const state = room.publicState(p.idx);
+    state.players = state.players.map((pl, i) => {
+      const sp = room.players[i];
+      const tier = (sp && !sp.isBot) ? (playerBadge.get(sp.socketId) ?? 0) : null;
+      return { ...pl, badge: tier };
+    });
+    io.to(p.socketId).emit('state', state);
+  }
 }
 
 function notify(room, msg) {
@@ -95,7 +114,9 @@ function recordRoundStats(room) {
       const gameWon = room.totalScores[pTeam] > room.totalScores[1 - pTeam];
       stats.recordGame(uuid, p.name, gameWon);
     }
-    io.to(p.socketId).emit('stats_update', stats.getStats(uuid));
+    const updated = stats.getStats(uuid);
+    playerBadge.set(p.socketId, getBadgeTier(updated?.pointsScored ?? 0));
+    io.to(p.socketId).emit('stats_update', updated);
   }
 }
 
@@ -427,9 +448,25 @@ io.on('connection', socket => {
   socket.on('my_stats', ({ uuid } = {}) => {
     if (!uuid) return;
     playerUuid.set(socket.id, uuid);
-    socket.emit('stats_update', stats.getStats(uuid) ?? {
-      name: '', gamesPlayed: 0, gamesWon: 0, roundsPlayed: 0, roundsWon: 0, pointsScored: 0,
-    });
+    const s = stats.getStats(uuid) ?? { name: '', gamesPlayed: 0, gamesWon: 0, roundsPlayed: 0, roundsWon: 0, pointsScored: 0 };
+    playerBadge.set(socket.id, getBadgeTier(s.pointsScored));
+    socket.emit('stats_update', s);
+  });
+
+  socket.on('account_create', ({ name, pin } = {}) => {
+    const uuid = playerUuid.get(socket.id);
+    const r = accounts.create(name, pin, uuid);
+    socket.emit('account_result', r);
+  });
+
+  socket.on('account_login', ({ name, pin } = {}) => {
+    const r = accounts.login(name, pin);
+    if (r.error) return socket.emit('account_result', r);
+    playerUuid.set(socket.id, r.uuid);
+    const s = stats.getStats(r.uuid) ?? { name: r.name, gamesPlayed: 0, gamesWon: 0, roundsPlayed: 0, roundsWon: 0, pointsScored: 0 };
+    const tier = getBadgeTier(s.pointsScored);
+    playerBadge.set(socket.id, tier);
+    socket.emit('account_result', { ...r, stats: s, tier });
   });
 
   // ── Voice + Video chat ───────────────────────────────────────────────
@@ -481,6 +518,25 @@ io.on('connection', socket => {
     }
     playerRoom.delete(socket.id);
   });
+});
+
+// ── Leaderboard ──────────────────────────────────────────────────────────────
+app.get('/api/leaderboard', (_req, res) => {
+  const allAcc = accounts.getAll();
+  const rows = Object.entries(allAcc).map(([name, acc]) => {
+    const s = stats.getStats(acc.uuid) || { gamesPlayed: 0, gamesWon: 0, roundsPlayed: 0, roundsWon: 0, pointsScored: 0 };
+    return {
+      name,
+      pointsScored: s.pointsScored,
+      gamesPlayed:  s.gamesPlayed,
+      gamesWon:     s.gamesWon,
+      roundsPlayed: s.roundsPlayed,
+      roundsWon:    s.roundsWon,
+      tier:         getBadgeTier(s.pointsScored),
+    };
+  }).sort((a, b) => b.pointsScored - a.pointsScored).slice(0, 25);
+
+  res.json(rows);
 });
 
 // Serve built React frontend in production

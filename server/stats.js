@@ -41,4 +41,8 @@ function recordGame(uuid, name, won) {
   save(data);
 }
 
-module.exports = { getStats, recordRound, recordGame };
+function getAll() {
+  return load();
+}
+
+module.exports = { getStats, recordRound, recordGame, getAll };
