@@ -93,7 +93,7 @@ async function loadModel() {
   loadAttempted = true;
   try {
     const ort = require('onnxruntime-node');
-    session   = await ort.InferenceSession.create(MODEL_PATH);
+    session   = await ort.InferenceSession.create(MODEL_PATH, { executionProviders: ['cpu'] });
     onnxReady = true;
     console.log('[BotRL] ONNX model loaded —', MODEL_PATH);
   } catch (e) {
